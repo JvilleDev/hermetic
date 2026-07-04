@@ -49,14 +49,14 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
-      - name: Build Debug APK
-        run: cd android && ./gradlew assembleDebug
+      - name: Build Release APK
+        run: cd android && ./gradlew assembleRelease
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: app-release
+          path: android/app/build/outputs/apk/release/app-release.apk
 
   create-release:
     needs: [changes, build-android]
@@ -70,7 +70,7 @@ jobs:
         if: ${{ needs.changes.outputs.android == 'true' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
         uses: actions/download-artifact@v4
         with:
-          name: app-debug
+          name: app-release
           path: ./artifacts
 
       - name: Package Backend
@@ -85,7 +85,7 @@ jobs:
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
           files: |
-            ./artifacts/app-debug.apk
+            ./artifacts/app-release.apk
             ./artifacts/hermetic-backend.tar.gz
           fail_on_unmatched_files: false
           draft: false
