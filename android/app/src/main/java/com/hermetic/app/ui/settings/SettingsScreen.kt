@@ -31,6 +31,7 @@ import com.hermetic.app.ui.theme.ActiveGreenBgDark
 import com.hermetic.app.ui.theme.InactiveGrayBgLight
 import com.hermetic.app.ui.theme.InactiveGrayBgDark
 import com.hermetic.app.ui.theme.InactiveGray
+import com.hermetic.app.updater.UpdateManager
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -47,6 +48,14 @@ fun SettingsScreen(
     var isConnected by remember { mutableStateOf<Boolean?>(true) } // Mock connected initially like the mockup
     var isChecking by remember { mutableStateOf(false) }
     var showUrlDialog by remember { mutableStateOf(false) }
+    var updateUrl by remember { mutableStateOf<String?>(null) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf(0f) }
+    val updateManager = remember { UpdateManager(context) }
+    val packageInfo = remember {
+        context.packageManager.getPackageInfo(context.packageName, 0)
+    }
+    val appVersion = remember { packageInfo.versionName ?: "0.1.0" }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
@@ -98,6 +107,55 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showUrlDialog = false }) {
                     Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    if (updateUrl != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isDownloading) updateUrl = null },
+            title = { Text("Actualización Disponible") },
+            text = {
+                Column {
+                    Text("Hay una nueva versión de Hermetic disponible para instalar.")
+                    if (isDownloading) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LinearProgressIndicator(
+                            progress = { downloadProgress },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Descargando: ${(downloadProgress * 100).toInt()}%", fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !isDownloading,
+                    onClick = {
+                        isDownloading = true
+                        scope.launch {
+                            val result = updateManager.downloadAndInstallApk(
+                                url = updateUrl!!,
+                                onProgress = { downloadProgress = it }
+                            )
+                            if (result.isFailure) {
+                                isDownloading = false
+                                updateUrl = null
+                            }
+                        }
+                    }
+                ) {
+                    Text(if (isDownloading) "Descargando..." else "Descargar e Instalar")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isDownloading,
+                    onClick = { updateUrl = null }
+                ) {
+                    Text("Más tarde")
                 }
             }
         )
@@ -218,9 +276,13 @@ fun SettingsScreen(
 
                 SettingsRow(
                     title = "Acerca de Hermetic",
-                    subtitle = "v1.0.0",
+                    subtitle = "v$appVersion",
                     icon = Icons.Default.Info,
-                    onClick = { /* TODO */ }
+                    onClick = {
+                        scope.launch {
+                            updateUrl = updateManager.checkForUpdates(appVersion)
+                        }
+                    }
                 )
             }
         }
