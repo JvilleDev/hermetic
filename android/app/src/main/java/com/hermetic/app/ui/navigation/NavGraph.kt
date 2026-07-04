@@ -62,11 +62,13 @@ import com.hermetic.app.ui.explorer.ExplorerScreen
 import com.hermetic.app.ui.projects.ProjectsScreen
 import com.hermetic.app.ui.providers.ProvidersScreen
 import com.hermetic.app.ui.sessions.SessionHistoryScreen
+import com.hermetic.app.ui.login.LoginScreen
 import com.hermetic.app.ui.settings.SettingsScreen
 import com.hermetic.app.ui.theme.ActiveGreen
 import kotlinx.coroutines.launch
 
 object Routes {
+    const val LOGIN = "login"
     const val CHAT = "chat/{sessionId}?parentDirectory={parentDirectory}&projectId={projectId}&projectName={projectName}"
     const val SESSION_HISTORY = "sessions"
     const val PROJECTS = "projects"
@@ -121,7 +123,20 @@ fun HermeticNavHost() {
         )
     }
     val api = remember { entryPoint.getHermeticApi() }
+    val authManager = remember { entryPoint.getAuthManager() }
     val chatRepository = remember { entryPoint.getChatRepository() }
+
+    var isLoggedIn by remember { mutableStateOf(authManager.isLoggedIn) }
+
+    if (!isLoggedIn) {
+        LoginScreen(
+            authManager = authManager,
+            onLoginSuccess = {
+                isLoggedIn = true
+            }
+        )
+        return
+    }
 
     val navBackStackEntry = navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry.value?.destination?.route
@@ -289,6 +304,7 @@ fun HermeticNavHost() {
                     popExitTransition = { fadeOut(tween(0)) },
                 ) {
                     SettingsScreen(
+                        authManager = authManager,
                         onNavigateToProviders = {
                             navController.navigate(Routes.PROVIDERS)
                         },

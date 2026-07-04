@@ -124,5 +124,19 @@
       {"hidden": false, "id": "bool458715613", "name": "is_active", "required": false, "system": false, "type": "bool"}
     ],
     "indexes": []
+  },
+  {
+    "id": "pbc_1188977373",
+    "name": "fcm_tokens",
+    "type": "base",
+    "fields": [
+      {"autogeneratePattern": "[a-z0-9]{15}", "hidden": false, "id": "text3208210256", "max": 15, "min": 15, "name": "id", "pattern": "^[a-z0-9]+$", "primaryKey": true, "required": true, "system": true, "type": "text"},
+      {"hidden": false, "id": "text1579384326", "max": 0, "min": 0, "name": "user_id", "required": true, "system": false, "type": "text"},
+      {"hidden": false, "id": "text2625344326", "max": 0, "min": 0, "name": "token", "required": true, "system": false, "type": "text"},
+      {"hidden": false, "id": "select3416247195", "maxSelect": 0, "name": "platform", "required": false, "system": false, "type": "select", "values": ["android","ios","web"]},
+      {"hidden": false, "id": "autodate2990389176", "name": "created", "onCreate": true, "onUpdate": false, "system": false, "type": "autodate"},
+      {"hidden": false, "id": "autodate3332085495", "name": "updated", "onCreate": true, "onUpdate": true, "system": false, "type": "autodate"}
+    ],
+    "indexes": []
   }
 ]

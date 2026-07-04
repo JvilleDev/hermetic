@@ -1,4 +1,5 @@
 from httpx import AsyncClient
+from fastapi import HTTPException
 from app.config import settings
 
 _client: AsyncClient | None = None
@@ -18,6 +19,80 @@ async def _get_client() -> AsyncClient:
             "Content-Type": "application/json",
         })
     return _client
+
+
+# --- Auth ---
+
+async def pb_login(email: str, password: str) -> dict:
+    async with AsyncClient(base_url=settings.pocketbase_url) as client:
+        r = await client.post(
+            "/api/collections/users/auth-with-password",
+            json={"identity": email, "password": password},
+        )
+        if r.status_code != 200:
+            raise HTTPException(status_code=401, detail="Credenciales inválidas")
+        return r.json()
+
+
+async def pb_register(email: str, password: str, password_confirm: str, name: str = "") -> dict:
+    async with AsyncClient(base_url=settings.pocketbase_url) as client:
+        r = await client.post(
+            "/api/collections/users/records",
+            json={
+                "email": email,
+                "password": password,
+                "passwordConfirm": password_confirm,
+                "name": name,
+            },
+        )
+        if r.status_code not in (200, 201):
+            detail = r.json().get("message", "Error al registrar")
+            raise HTTPException(status_code=r.status_code, detail=detail)
+        user = r.json()
+    # Auto-login after register
+    return await pb_login(email, password)
+
+
+async def verify_pb_token(token: str) -> dict:
+    async with AsyncClient(base_url=settings.pocketbase_url) as client:
+        r = await client.post(
+            "/api/collections/users/auth-refresh",
+            headers={"Authorization": token},
+        )
+        if r.status_code != 200:
+            raise HTTPException(status_code=401, detail="Token inválido o expirado")
+        return r.json()["record"]
+
+
+# --- FCM ---
+
+async def register_fcm_token(user_id: str, token: str, platform: str = "android") -> dict:
+    c = await _get_client()
+    r = await c.post(
+        "/api/collections/fcm_tokens/records",
+        json={
+            "user_id": user_id,
+            "token": token,
+            "platform": platform,
+        },
+    )
+    if r.status_code not in (200, 201):
+        # Try update if already exists
+        existing = await c.get(
+            "/api/collections/fcm_tokens/records",
+            params={"filter": f'token="{token}"'},
+        )
+        if existing.status_code == 200:
+            items = existing.json().get("items", [])
+            if items:
+                r = await c.patch(
+                    f"/api/collections/fcm_tokens/records/{items[0]['id']}",
+                    json={"user_id": user_id, "platform": platform},
+                )
+                r.raise_for_status()
+                return r.json()
+        raise HTTPException(status_code=400, detail="Error al registrar token FCM")
+    return r.json()
 
 
 async def get_project(project_id: str) -> dict | None:

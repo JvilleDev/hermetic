@@ -31,6 +31,7 @@ import com.hermetic.app.ui.theme.ActiveGreenBgDark
 import com.hermetic.app.ui.theme.InactiveGrayBgLight
 import com.hermetic.app.ui.theme.InactiveGrayBgDark
 import com.hermetic.app.ui.theme.InactiveGray
+import com.hermetic.app.auth.AuthManager
 import com.hermetic.app.updater.UpdateManager
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.Dispatchers
@@ -40,12 +41,13 @@ import kotlinx.coroutines.withTimeout
 
 @Composable
 fun SettingsScreen(
+    authManager: AuthManager,
     onNavigateToProviders: () -> Unit,
     onNavigateToExplorer: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var backendUrl by remember { mutableStateOf("http://144.217.161.133:9876") }
-    var isConnected by remember { mutableStateOf<Boolean?>(true) } // Mock connected initially like the mockup
+    var backendUrl by remember { mutableStateOf(authManager.hostUrl) }
+    var isConnected by remember { mutableStateOf<Boolean?>(null) }
     var isChecking by remember { mutableStateOf(false) }
     var showUrlDialog by remember { mutableStateOf(false) }
     var updateUrl by remember { mutableStateOf<String?>(null) }
@@ -99,6 +101,7 @@ fun SettingsScreen(
             confirmButton = {
                 Button(onClick = {
                     showUrlDialog = false
+                    authManager.setHost(backendUrl)
                     checkHealth(backendUrl)
                 }) {
                     Text("Guardar y Verificar")

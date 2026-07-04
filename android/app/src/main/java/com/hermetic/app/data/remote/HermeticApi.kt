@@ -22,7 +22,8 @@ import javax.inject.Singleton
 class HermeticApi @Inject constructor(
     private val gson: Gson,
 ) {
-    private var baseUrl: String = "http://144.217.161.133:9876"
+    private var baseUrl: String = ""
+    private var authToken: String = ""
 
     private val sseClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -40,7 +41,61 @@ class HermeticApi @Inject constructor(
         baseUrl = url.trimEnd('/')
     }
 
+    fun setAuthToken(token: String) {
+        authToken = token
+    }
+
     fun getBaseUrl(): String = baseUrl
+
+    private fun Request.Builder.withAuth(): Request.Builder {
+        if (authToken.isNotBlank()) {
+            header("Authorization", authToken)
+        }
+        return this
+    }
+
+    suspend fun login(email: String, password: String): Map<String, Any> {
+        val jsonBody = gson.toJson(mapOf("email" to email, "password" to password))
+            .toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$baseUrl/api/auth/login")
+            .post(jsonBody)
+            .build()
+        val response = restClient.newCall(request).execute()
+        val body = response.body?.string()
+        if (response.isSuccessful && body != null) {
+            @Suppress("UNCHECKED_CAST")
+            return gson.fromJson(body, Map::class.java) as Map<String, Any>
+        }
+        throw Exception(body ?: "Error HTTP ${response.code}")
+    }
+
+    suspend fun register(email: String, password: String, name: String = ""): Map<String, Any> {
+        val jsonBody = gson.toJson(mapOf("email" to email, "password" to password, "name" to name))
+            .toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$baseUrl/api/auth/register")
+            .post(jsonBody)
+            .build()
+        val response = restClient.newCall(request).execute()
+        val body = response.body?.string()
+        if (response.isSuccessful && body != null) {
+            @Suppress("UNCHECKED_CAST")
+            return gson.fromJson(body, Map::class.java) as Map<String, Any>
+        }
+        throw Exception(body ?: "Error HTTP ${response.code}")
+    }
+
+    suspend fun registerFcmToken(fcmToken: String, jwt: String) {
+        val jsonBody = gson.toJson(mapOf("token" to fcmToken, "platform" to "android"))
+            .toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$baseUrl/api/push/register-token")
+            .post(jsonBody)
+            .header("Authorization", jwt)
+            .build()
+        restClient.newCall(request).execute()
+    }
 
     suspend fun healthCheck(): Result<Boolean> {
         return try {

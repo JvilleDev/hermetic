@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Header, Query
 from fastapi.responses import StreamingResponse
 
 from app.api.schemas import ChatRequest
@@ -37,6 +37,10 @@ from app.db.client import (
     get_skill,
     update_skill,
     delete_skill,
+    pb_login,
+    pb_register,
+    verify_pb_token,
+    register_fcm_token,
 )
 from app.mcp.manager import MCPManager
 from app.skills.registry import SkillRegistry
@@ -68,6 +72,50 @@ async def startup():
 @router.on_event("shutdown")
 async def shutdown():
     await mcp_manager.close_all()
+
+
+# --- Auth ---
+
+@router.post("/api/auth/login")
+async def auth_login(data: dict):
+    result = await pb_login(data["email"], data["password"])
+    return {
+        "token": result["token"],
+        "user": result["record"],
+    }
+
+
+@router.post("/api/auth/register")
+async def auth_register(data: dict):
+    result = await pb_register(
+        email=data["email"],
+        password=data["password"],
+        password_confirm=data.get("password_confirm", data["password"]),
+        name=data.get("name", ""),
+    )
+    return {
+        "token": result["token"],
+        "user": result["record"],
+    }
+
+
+@router.get("/api/auth/me")
+async def auth_me(authorization: str = Header(...)):
+    user = await verify_pb_token(authorization)
+    return {"user": user}
+
+
+# --- Push Notifications ---
+
+@router.post("/api/push/register-token")
+async def register_fcm_endpoint(data: dict, authorization: str = Header(...)):
+    user = await verify_pb_token(authorization)
+    await register_fcm_token(
+        user_id=user["id"],
+        token=data["token"],
+        platform=data.get("platform", "android"),
+    )
+    return {"status": "ok"}
 
 
 # --- Health ---
