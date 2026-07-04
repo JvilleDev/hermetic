@@ -10,3 +10,7 @@
 -keepclassmembers class * {
     @dagger.hilt.android.internal.lifecycle.HiltViewModelMap *;
 }
+
+# Firebase
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.** { *; }
