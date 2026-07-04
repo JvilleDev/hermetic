@@ -3,20 +3,19 @@ from fastapi import FastAPI
 from app.api.routes import router
 from app.config import settings
 from app.db.client import _get_client
-from app.updater import check_and_apply_update
+from app.updater import start_periodic_updates
 
 app = FastAPI(
     title="Hermetic AI",
     description="Motor de IA soberano personal",
-    version="0.1.1",
+    version="0.1.3",
 )
 
 app.include_router(router)
 
 @app.on_event("startup")
 def startup_event():
-    # Launch updates check in background thread
-    threading.Thread(target=check_and_apply_update, daemon=True).start()
+    threading.Thread(target=start_periodic_updates, daemon=True).start()
 
 
 def main():
@@ -25,7 +24,7 @@ def main():
         "app.main:app",
         host=settings.host,
         port=settings.port,
-        reload=True,
+        reload=False,
     )
 
 
