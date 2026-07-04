@@ -86,13 +86,27 @@ class HermeticApi @Inject constructor(
         throw Exception(body ?: "Error HTTP ${response.code}")
     }
 
-    suspend fun registerFcmToken(fcmToken: String, jwt: String) {
+    suspend fun verifyAuth(): Boolean {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/api/auth/me")
+                .get()
+                .withAuth()
+                .build()
+            val response = restClient.newCall(request).execute()
+            response.isSuccessful
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun registerFcmToken(fcmToken: String) {
         val jsonBody = gson.toJson(mapOf("token" to fcmToken, "platform" to "android"))
             .toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url("$baseUrl/api/push/register-token")
             .post(jsonBody)
-            .header("Authorization", jwt)
+            .withAuth()
             .build()
         restClient.newCall(request).execute()
     }
@@ -143,6 +157,7 @@ class HermeticApi @Inject constructor(
             .url("$baseUrl/api/chat/stream")
             .post(jsonBody)
             .header("Accept", "text/event-stream")
+            .withAuth()
             .build()
 
         val listener = object : EventSourceListener() {
@@ -231,6 +246,7 @@ class HermeticApi @Inject constructor(
             val request = Request.Builder()
                 .url("$baseUrl/api/directory/tree?path=$path&depth=$depth&dirs_only=$dirsOnly")
                 .get()
+                .withAuth()
                 .build()
             val response = restClient.newCall(request).execute()
             val body = response.body?.string()
@@ -250,6 +266,7 @@ class HermeticApi @Inject constructor(
             val request = Request.Builder()
                 .url("$baseUrl/api/sessions")
                 .get()
+                .withAuth()
                 .build()
             val response = restClient.newCall(request).execute()
             val body = response.body?.string()
@@ -269,6 +286,7 @@ class HermeticApi @Inject constructor(
             val request = Request.Builder()
                 .url("$baseUrl/api/projects")
                 .get()
+                .withAuth()
                 .build()
             val response = restClient.newCall(request).execute()
             val body = response.body?.string()
@@ -290,6 +308,7 @@ class HermeticApi @Inject constructor(
             val request = Request.Builder()
                 .url("$baseUrl/api/projects/$projectId")
                 .patch(jsonBody)
+                .withAuth()
                 .build()
             val response = restClient.newCall(request).execute()
             Result.success(response.isSuccessful)
@@ -303,6 +322,7 @@ class HermeticApi @Inject constructor(
             val request = Request.Builder()
                 .url("$baseUrl/api/providers")
                 .get()
+                .withAuth()
                 .build()
             val response = restClient.newCall(request).execute()
             val body = response.body?.string()
@@ -322,6 +342,7 @@ class HermeticApi @Inject constructor(
             val request = Request.Builder()
                 .url("$baseUrl/api/providers/with-models")
                 .get()
+                .withAuth()
                 .build()
             val response = restClient.newCall(request).execute()
             val body = response.body?.string()
@@ -343,6 +364,7 @@ class HermeticApi @Inject constructor(
             val request = Request.Builder()
                 .url("$baseUrl/api/providers")
                 .post(jsonBody)
+                .withAuth()
                 .build()
             val response = restClient.newCall(request).execute()
             Result.success(response.isSuccessful)
@@ -358,6 +380,7 @@ class HermeticApi @Inject constructor(
             val request = Request.Builder()
                 .url("$baseUrl/api/providers/$providerId")
                 .patch(jsonBody)
+                .withAuth()
                 .build()
             val response = restClient.newCall(request).execute()
             Result.success(response.isSuccessful)
@@ -371,6 +394,7 @@ class HermeticApi @Inject constructor(
             val request = Request.Builder()
                 .url("$baseUrl/api/providers/$providerId")
                 .delete()
+                .withAuth()
                 .build()
             val response = restClient.newCall(request).execute()
             Result.success(response.isSuccessful)
@@ -384,6 +408,7 @@ class HermeticApi @Inject constructor(
             val request = Request.Builder()
                 .url("$baseUrl/api/sessions/$sessionId/messages")
                 .get()
+                .withAuth()
                 .build()
             val response = restClient.newCall(request).execute()
             val body = response.body?.string()

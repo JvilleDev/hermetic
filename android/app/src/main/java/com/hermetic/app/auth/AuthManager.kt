@@ -99,6 +99,16 @@ class AuthManager @Inject constructor(
         }
     }
 
+    suspend fun verifyToken(): Boolean {
+        if (state.token == null) return false
+        return if (api.verifyAuth()) {
+            true
+        } else {
+            logout()
+            false
+        }
+    }
+
     fun logout() {
         state = AuthState()
         prefs.edit().clear().apply()
@@ -106,9 +116,9 @@ class AuthManager @Inject constructor(
     }
 
     suspend fun registerFcmToken(fcmToken: String) {
-        val jwt = state.token ?: return
+        if (state.token == null) return
         try {
-            api.registerFcmToken(fcmToken, jwt)
+            api.registerFcmToken(fcmToken)
         } catch (_: Exception) {}
     }
 }

@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Header, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.api.schemas import ChatRequest
@@ -39,7 +39,6 @@ from app.db.client import (
     delete_skill,
     pb_login,
     pb_register,
-    verify_pb_token,
     register_fcm_token,
 )
 from app.services.notifier import send_release_notification
@@ -101,18 +100,16 @@ async def auth_register(data: dict):
 
 
 @router.get("/api/auth/me")
-async def auth_me(authorization: str = Header(...)):
-    user = await verify_pb_token(authorization)
-    return {"user": user}
+async def auth_me(request: Request):
+    return {"user": request.state.user}
 
 
 # --- Push Notifications ---
 
 @router.post("/api/push/register-token")
-async def register_fcm_endpoint(data: dict, authorization: str = Header(...)):
-    user = await verify_pb_token(authorization)
+async def register_fcm_endpoint(data: dict, request: Request):
     await register_fcm_token(
-        user_id=user["id"],
+        user_id=request.state.user["id"],
         token=data["token"],
         platform=data.get("platform", "android"),
     )

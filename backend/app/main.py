@@ -2,7 +2,7 @@ import threading
 from fastapi import FastAPI
 from app.api.routes import router
 from app.config import settings
-from app.db.client import _get_client
+from app.middleware.auth import auth_middleware
 from app.updater import start_periodic_updates
 
 app = FastAPI(
@@ -10,6 +10,8 @@ app = FastAPI(
     description="Motor de IA soberano personal",
     version="0.1.3",
 )
+
+app.middleware("http")(auth_middleware)
 
 app.include_router(router)
 

@@ -9,11 +9,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Notify users via FCM
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          WEBHOOK_SECRET: ${{ secrets.RELEASE_WEBHOOK_SECRET }}
         run: |
-          curl -s -X POST "${{ secrets.BACKEND_URL }}/api/push/notify-release" \
+          curl -s -X POST "${BACKEND_URL}/api/push/notify-release" \
             -H "Content-Type: application/json" \
             -d '{
-              "secret": "${{ secrets.RELEASE_WEBHOOK_SECRET }}",
+              "secret": "'"${WEBHOOK_SECRET}"'",
               "version": "${{ github.event.release.tag_name }}",
               "release_url": "${{ github.event.release.html_url }}"
             }'

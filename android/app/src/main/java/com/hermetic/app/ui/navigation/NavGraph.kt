@@ -127,6 +127,23 @@ fun HermeticNavHost() {
     val chatRepository = remember { entryPoint.getChatRepository() }
 
     var isLoggedIn by remember { mutableStateOf(authManager.isLoggedIn) }
+    var isLoading by remember { mutableStateOf(authManager.isLoggedIn) }
+
+    // Validate token on startup before showing main content
+    LaunchedEffect(Unit) {
+        if (isLoggedIn) {
+            val valid = withContext(Dispatchers.IO) { authManager.verifyToken() }
+            if (!valid) {
+                isLoggedIn = false
+            }
+        }
+        isLoading = false
+    }
+
+    if (isLoading) {
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        return
+    }
 
     if (!isLoggedIn) {
         LoginScreen(
