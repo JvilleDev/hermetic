@@ -16,8 +16,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check GOOGLE_SERVICES_JSON_B64
+        env:
+          SECRET: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
         run: |
-          echo '${{ secrets.GOOGLE_SERVICES_JSON_B64 }}' | base64 -d > /dev/null 2>&1 || { echo "ERROR: GOOGLE_SERVICES_JSON_B64 secret is missing or invalid"; exit 1; }
+          if [ -z "$SECRET" ]; then
+            echo "ERROR: GOOGLE_SERVICES_JSON_B64 secret is empty"
+            exit 1
+          fi
+          echo "Secret length: ${#SECRET} chars"
+          echo "$SECRET" | base64 -d > /dev/null 2>&1 || { echo "ERROR: Secret is not valid base64"; exit 1; }
+          echo "Base64 is valid"
 
   changes:
     runs-on: ubuntu-latest
