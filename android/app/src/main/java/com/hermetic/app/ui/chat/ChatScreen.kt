@@ -40,7 +40,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
@@ -196,79 +195,73 @@ private fun ThinkingPanel(thinkingText: String) {
     var expanded by remember { mutableStateOf(true) }
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
 
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isDark) Color(0xFF16171A) else Color(0xFFF3F4F6))
+            .clickable { expanded = !expanded }
+            .padding(vertical = 6.dp, horizontal = 10.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "🧠",
-                            fontSize = 12.sp
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Pensando...",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                Icon(
-                    imageVector = if (expanded) Icons.Outlined.KeyboardArrowDown else Icons.Outlined.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                Text(
+                    text = ">",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+                Text(
+                    text = "Pensando...",
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            Icon(
+                imageVector = if (expanded) Icons.Outlined.KeyboardArrowDown else Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+        }
 
-            AnimatedVisibility(
-                visible = expanded,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(top = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    thinkingText.split("\n").forEach { step ->
-                        if (step.isNotBlank()) {
-                            Text(
-                                text = "• $step",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    // Mock Tool Call executions matching mockup
-                    Spacer(modifier = Modifier.height(4.dp))
-                    ToolCallRow(toolName = "read_file", args = "{\"path\": \"src/auth/index.ts\"}", isRunning = true)
-                    ToolCallRow(toolName = "read_file", args = "Resultado (2.1 KB)", isRunning = false)
-                }
+                Text(
+                    text = thinkingText,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (isDark) Color(0xFF1E1F22) else Color(0xFFE5E7EB),
+                            RoundedCornerShape(4.dp)
+                        )
+                        .padding(6.dp)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                ToolCallRow(toolName = "read_file", args = "{\"path\": \"src/auth/index.ts\"}", isRunning = true)
+                ToolCallRow(toolName = "read_file", args = "Resultado (2.1 KB)", isRunning = false)
             }
         }
     }
@@ -564,37 +557,32 @@ private fun MessageBubble(msg: ChatMessage, isLastAndStreaming: Boolean = false)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 4.dp)
-                    .background(
-                        if (isDark) Color(0xFF1E1E1E) else Color(0xFFF2F2F7),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .border(
-                        1.dp,
-                        if (isDark) Color(0xFF2D2D30) else Color(0xFFE5E5EA),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(12.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isDark) Color(0xFF16171A) else Color(0xFFF3F4F6))
+                    .clickable { thinkingExpanded = !thinkingExpanded }
+                    .padding(vertical = 6.dp, horizontal = 10.dp)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { thinkingExpanded = !thinkingExpanded },
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.Psychology,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = ">",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Proceso de pensamiento",
-                            fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -605,16 +593,31 @@ private fun MessageBubble(msg: ChatMessage, isLastAndStreaming: Boolean = false)
                         modifier = Modifier.size(16.dp)
                     )
                 }
-                
-                if (thinkingExpanded) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = msg.thinking,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                    )
+
+                AnimatedVisibility(
+                    visible = thinkingExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp)
+                    ) {
+                        Text(
+                            text = msg.thinking,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (isDark) Color(0xFF1E1F22) else Color(0xFFE5E7EB),
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .padding(6.dp)
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
