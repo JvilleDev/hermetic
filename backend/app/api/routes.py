@@ -159,11 +159,26 @@ async def chat_stream(request: ChatRequest):
 async def _stream_events(session_id: str, ctx: AgentContext) -> AsyncGenerator[str, None]:
     yield f"event: session\ndata: {json.dumps({'session_id': session_id})}\n\n"
 
-    history = await get_messages(session_id)
-    messages = [{"role": m["role"], "content": m["content"]} for m in history]
+    try:
+        history = await get_messages(session_id)
+        messages = [{"role": m["role"], "content": m["content"]} for m in history]
 
-    async for event in engine.stream_chat(messages, ctx):
-        yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+        async for event in engine.stream_chat(messages, ctx):
+            yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("api")
+        logger.exception("Error during chat streaming")
+        
+        error_msg = str(e)
+        if "RateLimitError" in error_msg or "429" in error_msg:
+            error_msg = "Límite de peticiones de API excedido. Por favor, intenta de nuevo más tarde."
+        elif "OpenAIError" in error_msg:
+            error_msg = "Error en la comunicación con la IA. Por favor, intenta de nuevo."
+        else:
+            error_msg = f"Error inesperado: {error_msg}"
+            
+        yield f"event: error\ndata: {json.dumps({'message': error_msg})}\n\n"
 
     yield "event: done\ndata: {}\n\n"
 

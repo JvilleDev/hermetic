@@ -137,6 +137,14 @@ class HermeticApi @Inject constructor(
                             toolData["result"] as? String ?: "",
                         )
                     }
+                    "error" -> {
+                        try {
+                            val d = gson.fromJson(data, Map::class.java)
+                            onError(d["message"] as? String ?: "Error desconocido")
+                        } catch (_: Exception) {
+                            onError(data)
+                        }
+                    }
                     "done" -> onDone()
                 }
             }
