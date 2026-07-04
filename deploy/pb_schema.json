@@ -1,0 +1,128 @@
+[
+  {
+    "id": "_pb_users_auth_",
+    "listRule": "id = @request.auth.id",
+    "viewRule": "id = @request.auth.id",
+    "createRule": "",
+    "updateRule": "id = @request.auth.id",
+    "deleteRule": "id = @request.auth.id",
+    "name": "users",
+    "type": "auth",
+    "fields": [
+      {"autogeneratePattern": "[a-z0-9]{15}", "hidden": false, "id": "text3208210256", "max": 15, "min": 15, "name": "id", "pattern": "^[a-z0-9]+$", "primaryKey": true, "required": true, "system": true, "type": "text"},
+      {"cost": 0, "hidden": true, "id": "password901924565", "max": 0, "min": 8, "name": "password", "pattern": "", "required": true, "system": true, "type": "password"},
+      {"autogeneratePattern": "[a-zA-Z0-9]{50}", "hidden": true, "id": "text2504183744", "max": 60, "min": 30, "name": "tokenKey", "pattern": "", "primaryKey": false, "required": true, "system": true, "type": "text"},
+      {"hidden": false, "id": "email3885137012", "name": "email", "required": true, "system": true, "type": "email"},
+      {"hidden": false, "id": "bool1547992806", "name": "emailVisibility", "required": false, "system": true, "type": "bool"},
+      {"hidden": false, "id": "bool256245529", "name": "verified", "required": false, "system": true, "type": "bool"},
+      {"hidden": false, "id": "text1579384326", "max": 255, "min": 0, "name": "name", "pattern": "", "required": false, "system": false, "type": "text"},
+      {"hidden": false, "id": "file376926767", "maxSelect": 1, "maxSize": 0, "mimeTypes": ["image/jpeg","image/png","image/svg+xml","image/gif","image/webp"], "name": "avatar", "protected": false, "required": false, "system": false, "thumbs": null, "type": "file"},
+      {"hidden": false, "id": "autodate2990389176", "name": "created", "onCreate": true, "onUpdate": false, "system": false, "type": "autodate"},
+      {"hidden": false, "id": "autodate3332085495", "name": "updated", "onCreate": true, "onUpdate": true, "system": false, "type": "autodate"}
+    ],
+    "indexes": ["CREATE UNIQUE INDEX `idx_tokenKey__pb_users_auth_` ON `users` (`tokenKey`)", "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != ''"]
+  },
+  {
+    "id": "pbc_484305853",
+    "name": "projects",
+    "type": "base",
+    "fields": [
+      {"autogeneratePattern": "[a-z0-9]{15}", "hidden": false, "id": "text3208210256", "max": 15, "min": 15, "name": "id", "pattern": "^[a-z0-9]+$", "primaryKey": true, "required": true, "system": true, "type": "text"},
+      {"hidden": false, "id": "text1579384326", "max": 0, "min": 0, "name": "name", "required": true, "system": false, "type": "text"},
+      {"hidden": false, "id": "text3073600308", "max": 0, "min": 0, "name": "parent_directory", "required": true, "system": false, "type": "text"},
+      {"cascadeDelete": false, "collectionId": "pbc_2249077391", "hidden": false, "id": "relation3336187900", "maxSelect": 1, "minSelect": 0, "name": "provider_id", "required": false, "system": false, "type": "relation"}
+    ],
+    "indexes": []
+  },
+  {
+    "id": "pbc_3660498186",
+    "name": "sessions",
+    "type": "base",
+    "fields": [
+      {"autogeneratePattern": "[a-z0-9]{15}", "hidden": false, "id": "text3208210256", "max": 15, "min": 15, "name": "id", "pattern": "^[a-z0-9]+$", "primaryKey": true, "required": true, "system": true, "type": "text"},
+      {"hidden": false, "id": "text724990059", "max": 0, "min": 0, "name": "title", "required": true, "system": false, "type": "text"},
+      {"cascadeDelete": false, "collectionId": "pbc_484305853", "hidden": false, "id": "relation376250268", "maxSelect": 1, "minSelect": 0, "name": "project_id", "required": false, "system": false, "type": "relation"},
+      {"hidden": false, "id": "text2910378941", "max": 0, "min": 0, "name": "context_summary", "required": false, "system": false, "type": "text"}
+    ],
+    "indexes": []
+  },
+  {
+    "id": "pbc_2605467279",
+    "name": "messages",
+    "type": "base",
+    "fields": [
+      {"autogeneratePattern": "[a-z0-9]{15}", "hidden": false, "id": "text3208210256", "max": 15, "min": 15, "name": "id", "pattern": "^[a-z0-9]+$", "primaryKey": true, "required": true, "system": true, "type": "text"},
+      {"cascadeDelete": false, "collectionId": "pbc_3660498186", "hidden": false, "id": "relation1631579359", "maxSelect": 1, "minSelect": 0, "name": "session_id", "required": true, "system": false, "type": "relation"},
+      {"hidden": false, "id": "select1466534506", "maxSelect": 1, "name": "role", "required": true, "system": false, "type": "select", "values": ["user","assistant","tool"]},
+      {"hidden": false, "id": "text4274335913", "max": 0, "min": 0, "name": "content", "required": true, "system": false, "type": "text"},
+      {"hidden": false, "id": "json1204091606", "maxSize": 0, "name": "attachments", "required": false, "system": false, "type": "json"}
+    ],
+    "indexes": []
+  },
+  {
+    "id": "pbc_3318134343",
+    "name": "tool_calls",
+    "type": "base",
+    "fields": [
+      {"autogeneratePattern": "[a-z0-9]{15}", "hidden": false, "id": "text3208210256", "max": 15, "min": 15, "name": "id", "pattern": "^[a-z0-9]+$", "primaryKey": true, "required": true, "system": true, "type": "text"},
+      {"cascadeDelete": false, "collectionId": "pbc_2605467279", "hidden": false, "id": "relation1400509225", "maxSelect": 1, "minSelect": 0, "name": "message_id", "required": true, "system": false, "type": "relation"},
+      {"hidden": false, "id": "text2237742669", "max": 0, "min": 0, "name": "tool_name", "required": true, "system": false, "type": "text"},
+      {"hidden": false, "id": "json4225120046", "maxSize": 0, "name": "arguments", "required": true, "system": false, "type": "json"},
+      {"hidden": false, "id": "text325763347", "max": 0, "min": 0, "name": "result", "required": false, "system": false, "type": "text"},
+      {"hidden": false, "id": "select2063623452", "maxSelect": 1, "name": "status", "required": true, "system": false, "type": "select", "values": ["running","completed","error"]}
+    ],
+    "indexes": []
+  },
+  {
+    "id": "pbc_2249077391",
+    "name": "providers",
+    "type": "base",
+    "fields": [
+      {"autogeneratePattern": "[a-z0-9]{15}", "hidden": false, "id": "text3208210256", "max": 15, "min": 15, "name": "id", "pattern": "^[a-z0-9]+$", "primaryKey": true, "required": true, "system": true, "type": "text"},
+      {"hidden": false, "id": "text1579384326", "max": 0, "min": 0, "name": "name", "required": true, "system": false, "type": "text"},
+      {"hidden": false, "id": "select1767257173", "maxSelect": 0, "name": "provider_type", "required": true, "system": false, "type": "select", "values": ["gemini","openai","anthropic"]},
+      {"hidden": false, "id": "text3373460893", "max": 0, "min": 0, "name": "api_key", "required": true, "system": false, "type": "text"},
+      {"hidden": false, "id": "text2651864036", "max": 0, "min": 0, "name": "base_url", "required": false, "system": false, "type": "text"},
+      {"hidden": false, "id": "text1051928279", "max": 0, "min": 0, "name": "default_model", "required": true, "system": false, "type": "text"},
+      {"hidden": false, "id": "bool458715613", "name": "is_active", "required": false, "system": false, "type": "bool"},
+      {"hidden": false, "id": "bool4116874775", "name": "is_default", "required": false, "system": false, "type": "bool"},
+      {"hidden": false, "id": "number217095145", "max": null, "min": null, "name": "max_context_tokens", "onlyInt": true, "required": false, "system": false, "type": "number"}
+    ],
+    "indexes": []
+  },
+  {
+    "id": "pbc_2493906658",
+    "name": "mcp_servers",
+    "type": "base",
+    "fields": [
+      {"autogeneratePattern": "[a-z0-9]{15}", "hidden": false, "id": "text3208210256", "max": 15, "min": 15, "name": "id", "pattern": "^[a-z0-9]+$", "primaryKey": true, "required": true, "system": true, "type": "text"},
+      {"hidden": false, "id": "text1579384326", "max": 0, "min": 0, "name": "name", "required": true, "system": false, "type": "text"},
+      {"hidden": false, "id": "text1843675174", "max": 0, "min": 0, "name": "description", "required": false, "system": false, "type": "text"},
+      {"hidden": false, "id": "select1722491182", "maxSelect": 0, "name": "transport", "required": true, "system": false, "type": "select", "values": ["stdio","sse"]},
+      {"hidden": false, "id": "text2395663060", "max": 0, "min": 0, "name": "command", "required": false, "system": false, "type": "text"},
+      {"hidden": false, "id": "json370880162", "maxSize": 0, "name": "args", "required": false, "system": false, "type": "json"},
+      {"hidden": false, "id": "text4101391790", "max": 0, "min": 0, "name": "url", "required": false, "system": false, "type": "text"},
+      {"hidden": false, "id": "json4081402617", "maxSize": 0, "name": "env", "required": false, "system": false, "type": "json"},
+      {"hidden": false, "id": "bool458715613", "name": "is_active", "required": false, "system": false, "type": "bool"}
+    ],
+    "indexes": []
+  },
+  {
+    "id": "pbc_3793906494",
+    "name": "skills",
+    "type": "base",
+    "fields": [
+      {"autogeneratePattern": "[a-z0-9]{15}", "hidden": false, "id": "text3208210256", "max": 15, "min": 15, "name": "id", "pattern": "^[a-z0-9]+$", "primaryKey": true, "required": true, "system": true, "type": "text"},
+      {"hidden": false, "id": "text1579384326", "max": 0, "min": 0, "name": "name", "required": true, "system": false, "type": "text"},
+      {"hidden": false, "id": "text1843675174", "max": 0, "min": 0, "name": "description", "required": false, "system": false, "type": "text"},
+      {"hidden": false, "id": "select3416247195", "maxSelect": 0, "name": "skill_type", "required": true, "system": false, "type": "select", "values": ["native","mcp","python","prompt"]},
+      {"hidden": false, "id": "select1602912115", "maxSelect": 0, "name": "source", "required": false, "system": false, "type": "select", "values": ["generated","llama-hub","langchain-hub","custom"]},
+      {"hidden": false, "id": "text3974143315", "max": 0, "min": 0, "name": "system_prompt_additions", "required": false, "system": false, "type": "text"},
+      {"hidden": false, "id": "json4210367087", "maxSize": 0, "name": "tool_defs", "required": false, "system": false, "type": "json"},
+      {"hidden": false, "id": "text2891411667", "max": 0, "min": 0, "name": "tool_code", "required": false, "system": false, "type": "text"},
+      {"cascadeDelete": false, "collectionId": "pbc_2493906658", "hidden": false, "id": "relation1360478069", "maxSelect": 1, "minSelect": 0, "name": "mcp_server_id", "required": false, "system": false, "type": "relation"},
+      {"hidden": false, "id": "bool458715613", "name": "is_active", "required": false, "system": false, "type": "bool"}
+    ],
+    "indexes": []
+  }
+]

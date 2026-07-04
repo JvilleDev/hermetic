@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "pocketbase": {
+      "type": "remote",
+      "url": "https://tu-servidor-mcp.example.com/mcp",
+      "headers": {
+        "X-PB-URL": "https://tu-pocketbase.example.com",
+        "X-PB-Email": "admin@example.com",
+        "X-PB-Password": "tu-contraseña"
+      }
+    }
+  }
+}
