@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import com.google.android.gms.tasks.Tasks
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.hermetic.app.auth.AuthManager
@@ -25,7 +26,7 @@ class HermeticApp : Application() {
         // Register existing FCM token for logged-in users
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val token = FirebaseMessaging.getInstance().token
+                val token = Tasks.await(FirebaseMessaging.getInstance().token)
                 val entryPoint = EntryPointAccessors.fromApplication(
                     this@HermeticApp,
                     HiltApiEntryPoint::class.java
