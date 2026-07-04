@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.hermetic.app.data.model.Session
 import com.hermetic.app.data.model.Project
 import com.hermetic.app.data.model.Provider
+import com.hermetic.app.data.model.ProviderWithModels
 import com.hermetic.app.data.model.Message
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -23,10 +24,16 @@ class HermeticApi @Inject constructor(
 ) {
     private var baseUrl: String = "http://144.217.161.133:9876"
 
-    private val client = OkHttpClient.Builder()
+    private val sseClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.MINUTES)
         .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    private val restClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
     fun setBaseUrl(url: String) {
@@ -41,7 +48,7 @@ class HermeticApi @Inject constructor(
                 .url("$baseUrl/health")
                 .get()
                 .build()
-            val response = client.newCall(request).execute()
+            val response = restClient.newCall(request).execute()
             Result.success(response.isSuccessful)
         } catch (e: Exception) {
             Result.failure(e)
@@ -54,6 +61,8 @@ class HermeticApi @Inject constructor(
         projectId: String?,
         projectName: String?,
         parentDirectory: String?,
+        providerId: String? = null,
+        model: String? = null,
         onSession: (String) -> Unit,
         onProvider: (String, String) -> Unit,
         onThinking: (String) -> Unit,
@@ -69,6 +78,8 @@ class HermeticApi @Inject constructor(
             "project_id" to projectId,
             "project_name" to projectName,
             "parent_directory" to parentDirectory,
+            "provider_id" to providerId,
+            "model" to model,
         )
         val jsonBody = gson.toJson(body)
             .toRequestBody("application/json".toMediaType())
@@ -144,7 +155,7 @@ class HermeticApi @Inject constructor(
             }
         }
 
-        return EventSources.createFactory(client)
+        return EventSources.createFactory(sseClient)
             .newEventSource(request, listener)
     }
 
@@ -158,7 +169,7 @@ class HermeticApi @Inject constructor(
                 .url("$baseUrl/api/directory/tree?path=$path&depth=$depth&dirs_only=$dirsOnly")
                 .get()
                 .build()
-            val response = client.newCall(request).execute()
+            val response = restClient.newCall(request).execute()
             val body = response.body?.string()
             if (response.isSuccessful && body != null) {
                 @Suppress("UNCHECKED_CAST")
@@ -177,7 +188,7 @@ class HermeticApi @Inject constructor(
                 .url("$baseUrl/api/sessions")
                 .get()
                 .build()
-            val response = client.newCall(request).execute()
+            val response = restClient.newCall(request).execute()
             val body = response.body?.string()
             if (response.isSuccessful && body != null) {
                 val type = object : com.google.gson.reflect.TypeToken<List<Session>>() {}.type
@@ -196,7 +207,7 @@ class HermeticApi @Inject constructor(
                 .url("$baseUrl/api/projects")
                 .get()
                 .build()
-            val response = client.newCall(request).execute()
+            val response = restClient.newCall(request).execute()
             val body = response.body?.string()
             if (response.isSuccessful && body != null) {
                 val type = object : com.google.gson.reflect.TypeToken<List<Project>>() {}.type
@@ -209,13 +220,28 @@ class HermeticApi @Inject constructor(
         }
     }
 
+    suspend fun updateProject(projectId: String, data: Map<String, Any?>): Result<Boolean> {
+        return try {
+            val jsonBody = gson.toJson(data)
+                .toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("$baseUrl/api/projects/$projectId")
+                .patch(jsonBody)
+                .build()
+            val response = restClient.newCall(request).execute()
+            Result.success(response.isSuccessful)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun getProviders(): Result<List<Provider>> {
         return try {
             val request = Request.Builder()
                 .url("$baseUrl/api/providers")
                 .get()
                 .build()
-            val response = client.newCall(request).execute()
+            val response = restClient.newCall(request).execute()
             val body = response.body?.string()
             if (response.isSuccessful && body != null) {
                 val type = object : com.google.gson.reflect.TypeToken<List<Provider>>() {}.type
@@ -228,13 +254,75 @@ class HermeticApi @Inject constructor(
         }
     }
 
+    suspend fun getProvidersWithModels(): Result<List<ProviderWithModels>> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/api/providers/with-models")
+                .get()
+                .build()
+            val response = restClient.newCall(request).execute()
+            val body = response.body?.string()
+            if (response.isSuccessful && body != null) {
+                val type = object : com.google.gson.reflect.TypeToken<List<ProviderWithModels>>() {}.type
+                Result.success(gson.fromJson(body, type))
+            } else {
+                Result.failure(Exception("HTTP ${response.code}: $body"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createProvider(data: Map<String, Any>): Result<Boolean> {
+        return try {
+            val jsonBody = gson.toJson(data)
+                .toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("$baseUrl/api/providers")
+                .post(jsonBody)
+                .build()
+            val response = restClient.newCall(request).execute()
+            Result.success(response.isSuccessful)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateProvider(providerId: String, data: Map<String, Any>): Result<Boolean> {
+        return try {
+            val jsonBody = gson.toJson(data)
+                .toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("$baseUrl/api/providers/$providerId")
+                .patch(jsonBody)
+                .build()
+            val response = restClient.newCall(request).execute()
+            Result.success(response.isSuccessful)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteProvider(providerId: String): Result<Boolean> {
+        return try {
+            val request = Request.Builder()
+                .url("$baseUrl/api/providers/$providerId")
+                .delete()
+                .build()
+            val response = restClient.newCall(request).execute()
+            Result.success(response.isSuccessful)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun getMessages(sessionId: String): Result<List<Message>> {
         return try {
             val request = Request.Builder()
                 .url("$baseUrl/api/sessions/$sessionId/messages")
                 .get()
                 .build()
-            val response = client.newCall(request).execute()
+            val response = restClient.newCall(request).execute()
             val body = response.body?.string()
             if (response.isSuccessful && body != null) {
                 val type = object : com.google.gson.reflect.TypeToken<List<Message>>() {}.type

@@ -3,6 +3,8 @@ package com.hermetic.app.ui.navigation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,6 +17,8 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Settings
@@ -28,16 +32,30 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import dagger.hilt.android.EntryPointAccessors
 import com.hermetic.app.di.HiltApiEntryPoint
 import androidx.navigation.NavType
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import com.hermetic.app.data.model.Provider
+import com.hermetic.app.data.model.Session
+import com.hermetic.app.data.remote.HermeticApi
+import com.hermetic.app.data.repository.ChatRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CoroutineScope
 import com.hermetic.app.ui.chat.ChatScreen
 import com.hermetic.app.ui.chat.HermeticHexagonLogo
 import com.hermetic.app.ui.explorer.ExplorerScreen
@@ -49,30 +67,45 @@ import com.hermetic.app.ui.theme.ActiveGreen
 import kotlinx.coroutines.launch
 
 object Routes {
-    const val CHAT = "chat/{sessionId}"
+    const val CHAT = "chat/{sessionId}?parentDirectory={parentDirectory}&projectId={projectId}&projectName={projectName}"
     const val SESSION_HISTORY = "sessions"
     const val PROJECTS = "projects"
     const val SETTINGS = "settings"
     const val EXPLORER = "explorer/{projectPath}"
     const val PROVIDERS = "providers"
 
-    fun chat(sessionId: String) = "chat/$sessionId"
+    fun chat(
+        sessionId: String,
+        parentDirectory: String? = null,
+        projectId: String? = null,
+        projectName: String? = null
+    ): String {
+        var path = "chat/$sessionId"
+        val params = mutableListOf<String>()
+        if (parentDirectory != null) {
+            params.add("parentDirectory=${java.net.URLEncoder.encode(parentDirectory, "UTF-8")}")
+        }
+        if (projectId != null) {
+            params.add("projectId=${java.net.URLEncoder.encode(projectId, "UTF-8")}")
+        }
+        if (projectName != null) {
+            params.add("projectName=${java.net.URLEncoder.encode(projectName, "UTF-8")}")
+        }
+        if (params.isNotEmpty()) {
+            path += "?" + params.joinToString("&")
+        }
+        return path
+    }
+
     fun explorer(projectPath: String) = "explorer/${java.net.URLEncoder.encode(projectPath, "UTF-8")}"
 }
 
-private data class DrawerItem(
+private data class NavigationItemData(
     val label: String,
     val route: String,
     val icon: ImageVector,
+    val isSelected: Boolean
 )
-
-private val drawerItems = listOf(
-    DrawerItem("Nuevo Chat", Routes.chat("new"), Icons.Default.Chat),
-    DrawerItem("Historial", Routes.SESSION_HISTORY, Icons.Default.History),
-    DrawerItem("Proyectos", Routes.PROJECTS, Icons.Default.Folder),
-    DrawerItem("Ajustes", Routes.SETTINGS, Icons.Default.Settings),
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HermeticNavHost() {
@@ -81,60 +114,40 @@ fun HermeticNavHost() {
     val scope = rememberCoroutineScope()
 
     val context = LocalContext.current
-    val api = remember {
+    val entryPoint = remember {
         EntryPointAccessors.fromApplication(
             context.applicationContext,
             HiltApiEntryPoint::class.java
-        ).getHermeticApi()
+        )
     }
+    val api = remember { entryPoint.getHermeticApi() }
+    val chatRepository = remember { entryPoint.getChatRepository() }
 
     val navBackStackEntry = navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry.value?.destination?.route
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(
-                drawerContainerColor = MaterialTheme.colorScheme.surface,
-                drawerShape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(24.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    HermeticHexagonLogo()
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Hermetic",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                drawerItems.forEach { item ->
-                    NavigationDrawerItem(
-                        label = { Text(item.label) },
-                        selected = false,
-                        onClick = {
-                            navController.navigate(item.route) {
-                                popUpTo(Routes.CHAT) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                            scope.launch { drawerState.close() }
-                        },
-                        icon = { Icon(item.icon, contentDescription = item.label) },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                        colors = NavigationDrawerItemDefaults.colors(
-                            unselectedContainerColor = Color.Transparent,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-                }
+    val sessions by chatRepository.sessions.collectAsState()
+    val activeModel by chatRepository.activeModel.collectAsState()
+    val providers by chatRepository.providers.collectAsState()
+
+    // Prefetch sessions asynchronously as soon as the app loads
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            chatRepository.refreshSessions()
+            chatRepository.refreshActiveModel()
+        }
+    }
+
+    // Refresh sessions asynchronously when the drawer is opened
+    LaunchedEffect(drawerState.currentValue) {
+        if (drawerState.isOpen) {
+            withContext(Dispatchers.IO) {
+                chatRepository.refreshSessions()
             }
-        },
-    ) {
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
                 val isSubScreen = currentRoute == Routes.EXPLORER || currentRoute == Routes.PROVIDERS
@@ -146,10 +159,25 @@ fun HermeticNavHost() {
                     title = {
                         when {
                             currentRoute?.startsWith("chat") == true -> {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    HermeticHexagonLogo()
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Hermetic", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                val currentSessionId = navBackStackEntry.value?.arguments?.getString("sessionId")
+                                val currentSession = sessions.find { it.id == currentSessionId }
+                                val displayTitle = if (currentSession != null && currentSession.title != "Nuevo chat" && currentSession.title.isNotBlank()) {
+                                    currentSession.title
+                                } else {
+                                    ""
+                                }
+                                AnimatedVisibility(
+                                    visible = displayTitle.isNotEmpty(),
+                                    enter = fadeIn(animationSpec = tween(400)) + expandHorizontally(),
+                                    exit = fadeOut(animationSpec = tween(400)) + shrinkHorizontally()
+                                ) {
+                                    Text(
+                                        text = displayTitle,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                             currentRoute == Routes.SESSION_HISTORY -> {
@@ -172,54 +200,16 @@ fun HermeticNavHost() {
                     navigationIcon = {
                         if (isSubScreen) {
                             IconButton(onClick = { navController.popBackStack() }) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
+                                Icon(Icons.Outlined.ArrowBack, contentDescription = "Volver")
                             }
                         } else {
                             IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(Icons.Default.Menu, contentDescription = "Menú")
+                                Icon(Icons.Outlined.Menu, contentDescription = "Menú")
                             }
                         }
                     },
                     actions = {
                         when {
-                            currentRoute?.startsWith("chat") == true -> {
-                                // Model selector chip on the right matching mockup 1
-                                Card(
-                                    modifier = Modifier
-                                        .padding(end = 12.dp)
-                                        .clickable { /* Choose model */ }
-                                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp)),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(6.dp)
-                                                .background(ActiveGreen, shape = CircleShape)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "gpt-4o",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                            currentRoute == Routes.SESSION_HISTORY || currentRoute == Routes.PROJECTS || currentRoute == Routes.PROVIDERS -> {
-                                IconButton(onClick = {
-                                    if (currentRoute == Routes.SESSION_HISTORY || currentRoute?.startsWith("chat") == true) {
-                                        navController.navigate(Routes.chat("new"))
-                                    }
-                                }) {
-                                    Icon(Icons.Default.Add, contentDescription = "Añadir")
-                                }
-                            }
                             currentRoute == Routes.EXPLORER -> {
                                 IconButton(onClick = { /* Filter */ }) {
                                     Icon(Icons.Default.Tune, contentDescription = "Filtrar")
@@ -228,76 +218,6 @@ fun HermeticNavHost() {
                         }
                     }
                 )
-            },
-            bottomBar = {
-                // Show bottom navigation bar only on main screens (Chat, Projects, Settings, Providers)
-                val showBottomBar = currentRoute?.startsWith("chat") == true ||
-                        currentRoute == Routes.PROJECTS ||
-                        currentRoute == Routes.SETTINGS ||
-                        currentRoute == Routes.PROVIDERS ||
-                        currentRoute == Routes.SESSION_HISTORY
-
-                if (showBottomBar) {
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 8.dp,
-                        modifier = Modifier.border(0.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                    ) {
-                        val isChatActive = currentRoute?.startsWith("chat") == true || currentRoute == Routes.SESSION_HISTORY
-                        NavigationBarItem(
-                            selected = isChatActive,
-                            onClick = {
-                                navController.navigate(Routes.chat("new")) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(if (isChatActive) Icons.Default.Chat else Icons.Outlined.Chat, contentDescription = "Chat") },
-                            label = { Text("Chat") },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
-
-                        val isProjectsActive = currentRoute == Routes.PROJECTS
-                        NavigationBarItem(
-                            selected = isProjectsActive,
-                            onClick = {
-                                navController.navigate(Routes.PROJECTS) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(if (isProjectsActive) Icons.Default.Folder else Icons.Outlined.Folder, contentDescription = "Proyectos") },
-                            label = { Text("Proyectos") },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
-
-                        val isSettingsActive = currentRoute == Routes.SETTINGS || currentRoute == Routes.PROVIDERS
-                        NavigationBarItem(
-                            selected = isSettingsActive,
-                            onClick = {
-                                navController.navigate(Routes.SETTINGS) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(if (isSettingsActive) Icons.Default.Settings else Icons.Outlined.Settings, contentDescription = "Ajustes") },
-                            label = { Text("Ajustes") },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
-                    }
-                }
             }
         ) { innerPadding ->
             NavHost(
@@ -305,11 +225,41 @@ fun HermeticNavHost() {
                 startDestination = Routes.chat("new"),
                 modifier = Modifier.padding(innerPadding),
             ) {
-                composable(Routes.CHAT) { backStackEntry ->
+                composable(
+                    route = Routes.CHAT,
+                    arguments = listOf(
+                        navArgument("sessionId") { type = NavType.StringType },
+                        navArgument("parentDirectory") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
+                        navArgument("projectId") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
+                        navArgument("projectName") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        }
+                    ),
+                    enterTransition = { fadeIn(tween(0)) },
+                    exitTransition = { fadeOut(tween(0)) },
+                    popEnterTransition = { fadeIn(tween(0)) },
+                    popExitTransition = { fadeOut(tween(0)) },
+                ) { backStackEntry ->
                     val sessionId = backStackEntry.arguments?.getString("sessionId") ?: "new"
                     ChatScreen(sessionId = sessionId)
                 }
-                composable(Routes.SESSION_HISTORY) {
+                composable(
+                    Routes.SESSION_HISTORY,
+                    enterTransition = { fadeIn(tween(0)) },
+                    exitTransition = { fadeOut(tween(0)) },
+                    popEnterTransition = { fadeIn(tween(0)) },
+                    popExitTransition = { fadeOut(tween(0)) },
+                ) {
                     SessionHistoryScreen(
                         api = api,
                         onSessionClick = { sessionId ->
@@ -317,7 +267,13 @@ fun HermeticNavHost() {
                         },
                     )
                 }
-                composable(Routes.PROJECTS) {
+                composable(
+                    Routes.PROJECTS,
+                    enterTransition = { fadeIn(tween(0)) },
+                    exitTransition = { fadeOut(tween(0)) },
+                    popEnterTransition = { fadeIn(tween(0)) },
+                    popExitTransition = { fadeOut(tween(0)) },
+                ) {
                     ProjectsScreen(
                         api = api,
                         onProjectClick = { projectPath ->
@@ -325,7 +281,13 @@ fun HermeticNavHost() {
                         }
                     )
                 }
-                composable(Routes.SETTINGS) {
+                composable(
+                    Routes.SETTINGS,
+                    enterTransition = { fadeIn(tween(0)) },
+                    exitTransition = { fadeOut(tween(0)) },
+                    popEnterTransition = { fadeIn(tween(0)) },
+                    popExitTransition = { fadeOut(tween(0)) },
+                ) {
                     SettingsScreen(
                         onNavigateToProviders = {
                             navController.navigate(Routes.PROVIDERS)
@@ -337,18 +299,268 @@ fun HermeticNavHost() {
                 }
                 composable(
                     route = Routes.EXPLORER,
-                    arguments = listOf(navArgument("projectPath") { type = NavType.StringType })
+                    arguments = listOf(navArgument("projectPath") { type = NavType.StringType }),
+                    enterTransition = { fadeIn(tween(0)) },
+                    exitTransition = { fadeOut(tween(0)) },
+                    popEnterTransition = { fadeIn(tween(0)) },
+                    popExitTransition = { fadeOut(tween(0)) },
                 ) { backStackEntry ->
                     val projectPath = backStackEntry.arguments?.getString("projectPath") ?: ""
                     ExplorerScreen(
                         api = api,
                         projectPath = java.net.URLDecoder.decode(projectPath, "UTF-8"),
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStack() },
+                        onStartChat = { parentDir ->
+                            navController.navigate(Routes.chat("new", parentDirectory = parentDir))
+                        }
                     )
                 }
-                composable(Routes.PROVIDERS) {
+                composable(
+                    Routes.PROVIDERS,
+                    enterTransition = { fadeIn(tween(0)) },
+                    exitTransition = { fadeOut(tween(0)) },
+                    popEnterTransition = { fadeIn(tween(0)) },
+                    popExitTransition = { fadeOut(tween(0)) },
+                ) {
                     ProvidersScreen(api = api)
                 }
+            }
+        }
+
+        // Custom iOS-style Side Sheet Panel Overlay
+        AnimatedVisibility(
+            visible = drawerState.isOpen,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.4f))
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        scope.launch { drawerState.close() }
+                    }
+            )
+        }
+
+        AnimatedVisibility(
+            visible = drawerState.isOpen,
+            enter = slideInHorizontally(
+                animationSpec = tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+            ) { -it },
+            exit = slideOutHorizontally(
+                animationSpec = tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+            ) { -it }
+        ) {
+            val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(280.dp)
+                    .background(if (isDark) Color(0xFF0F0F10) else Color(0xFFF2F2F7))
+                    .border(
+                        1.dp,
+                        if (isDark) Color(0xFF1E1E20) else Color(0xFFE5E5EA),
+                        RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
+                    )
+                    .clip(RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp))
+            ) {
+                DrawerContent(
+                    api = api,
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope,
+                    sessions = sessions
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrawerContent(
+    api: HermeticApi,
+    navController: NavHostController,
+    drawerState: DrawerState,
+    scope: CoroutineScope,
+    sessions: List<Session>
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        // Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    painter = painterResource(id = com.hermetic.app.R.mipmap.ic_launcher),
+                    contentDescription = "Hermetic Logo",
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Hermetic",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            IconButton(onClick = { /* Search */ }) {
+                Icon(
+                    imageVector = Icons.Outlined.Search,
+                    contentDescription = "Buscar",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Upper navigation section (using modern iOS style outline icons)
+        val navItems = listOf(
+            Triple("Proyectos", Routes.PROJECTS, Icons.Outlined.Folder),
+            Triple("Ajustes", Routes.SETTINGS, Icons.Outlined.Settings),
+            Triple("Providers", Routes.PROVIDERS, Icons.Outlined.Key)
+        )
+
+        navItems.forEach { (label, route, icon) ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable {
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                        scope.launch { drawerState.close() }
+                    }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = label,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "Recientes",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
+        )
+
+        // Recents sessions list (scrollable)
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(sessions) { session ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            navController.navigate(Routes.chat(session.id))
+                            scope.launch { drawerState.close() }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = session.title,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Bottom section of drawer (New Chat button + user avatar)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Nuevo Chat button (pill shape in green/accent color)
+            Button(
+                onClick = {
+                    navController.navigate(Routes.chat("new"))
+                    scope.launch { drawerState.close() }
+                },
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ActiveGreen),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.height(40.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Nuevo Chat",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+
+            // User Avatar
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "JV",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }

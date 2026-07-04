@@ -16,3 +16,8 @@ class ProviderConfig:
     @property
     def litellm_model(self) -> str:
         return f"{self.provider_type}/{self.default_model}"
+
+    def litellm_model_for(self, model: str | None = None) -> str:
+        """Return the litellm model string, using model override if provided."""
+        m = model or self.default_model
+        return f"{self.provider_type}/{m}"

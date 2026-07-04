@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from app.api.schemas import ChatRequest
 from app.agent.engine import AgentEngine
 from app.agent.context import AgentContext
+from app.providers.models_catalog import get_models_for_provider_type, get_models_from_openai_compatible
 from app.db.client import (
     save_message,
     get_messages,
@@ -25,6 +26,7 @@ from app.db.client import (
     get_project,
     list_projects,
     create_project,
+    update_project,
     delete_project,
     list_mcp_servers,
     create_mcp_server,
@@ -139,6 +141,8 @@ async def chat_stream(request: ChatRequest):
         project_name=request.project_name,
         parent_directory=request.parent_directory,
         context_summary=session.get("context_summary"),
+        provider_id=request.provider_id,
+        model=request.model,
     )
 
     return StreamingResponse(
@@ -204,6 +208,40 @@ async def get_providers():
     return await list_providers()
 
 
+@router.get("/api/providers/with-models")
+async def get_providers_with_models():
+    """Return all providers, each enriched with a full list of available chat models."""
+    raw = await list_providers()
+    result = []
+    for p in raw:
+        provider_type = p.get("provider_type", "")
+        base_url = p.get("base_url") or ""
+        api_key = p.get("api_key", "")
+
+        # Custom base_url → query the endpoint live (Ollama, LM Studio, etc.)
+        if base_url and provider_type == "openai":
+            models = await get_models_from_openai_compatible(base_url, api_key)
+        else:
+            models = get_models_for_provider_type(provider_type)
+
+        # Fallback: always include the configured default_model
+        default = p.get("default_model", "")
+        if default and default not in models:
+            models = [default] + models
+
+        result.append({
+            "id": p["id"],
+            "name": p["name"],
+            "provider_type": provider_type,
+            "base_url": base_url or None,
+            "default_model": default,
+            "is_default": p.get("is_default", False),
+            "is_active": p.get("is_active", True),
+            "models": models,
+        })
+    return result
+
+
 @router.post("/api/providers")
 async def add_provider(data: dict):
     return await create_provider(data)
@@ -238,6 +276,11 @@ async def get_project_detail(project_id: str):
 @router.post("/api/projects")
 async def add_project(data: dict):
     return await create_project(data)
+
+
+@router.patch("/api/projects/{project_id}")
+async def patch_project(project_id: str, data: dict):
+    return await update_project(project_id, data)
 
 
 @router.delete("/api/projects/{project_id}")

@@ -2,15 +2,20 @@ from app.providers.schemas import ProviderConfig
 from app.db.client import _get_client
 
 
-async def resolve_provider(project_id: str | None = None) -> ProviderConfig:
+async def resolve_provider(project_id: str | None = None, provider_id: str | None = None) -> ProviderConfig:
     c = await _get_client()
+
+    # Direct provider lookup takes highest priority (explicit selection by user)
+    if provider_id:
+        r = await c.get(f"/api/collections/providers/records/{provider_id}")
+        return _parse_provider(r.json())
 
     if project_id:
         proj = await c.get(f"/api/collections/projects/records/{project_id}")
         proj = proj.json()
-        provider_id = proj.get("provider_id")
-        if provider_id:
-            r = await c.get(f"/api/collections/providers/records/{provider_id}")
+        proj_provider_id = proj.get("provider_id")
+        if proj_provider_id:
+            r = await c.get(f"/api/collections/providers/records/{proj_provider_id}")
             data = r.json()
             return _parse_provider(data)
 

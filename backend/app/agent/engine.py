@@ -1,13 +1,26 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from collections.abc import AsyncGenerator
 
 from litellm import acompletion
 
+logger = logging.getLogger(__name__)
+
 from app.agent.context import AgentContext
 from app.agent.prompts import build_system_prompt
-from app.db.client import save_message, update_session_summary, create_skill as db_create_skill
+from app.db.client import (
+    save_message,
+    update_session_summary,
+    create_skill as db_create_skill,
+    create_tool_call,
+    update_tool_call,
+    update_session_title,
+    get_session,
+    get_messages,
+)
 from app.mcp.manager import MCPManager
 from app.providers.schemas import ProviderConfig
 from app.providers.service import resolve_provider
@@ -195,16 +208,14 @@ class AgentEngine:
         self.mcp_manager = mcp_manager or MCPManager()
         self.skill_registry = skill_registry or SkillRegistry()
 
-    async def _get_provider(self, project_id: str | None) -> ProviderConfig:
-        if self._provider is None:
-            self._provider = await resolve_provider(project_id)
-        return self._provider
+    async def _get_provider(self, project_id: str | None, provider_id: str | None = None) -> ProviderConfig:
+        return await resolve_provider(project_id=project_id, provider_id=provider_id)
 
     async def _compact_context(
-        self, oai_messages: list[dict], provider: ProviderConfig, ctx: AgentContext
+        self, oai_messages: list[dict], provider: ProviderConfig, ctx: AgentContext, model_str: str
     ) -> list[dict]:
-        context_limit = get_context_limit(provider.litellm_model, provider.max_context_tokens)
-        total = count_tokens(provider.litellm_model, oai_messages)
+        context_limit = get_context_limit(model_str, provider.max_context_tokens)
+        total = count_tokens(model_str, oai_messages)
         threshold = int(context_limit * COMPACTION_THRESHOLD)
 
         if total <= threshold:
@@ -228,7 +239,7 @@ class AgentEngine:
 
         try:
             response = await acompletion(
-                model=provider.litellm_model,
+                model=model_str,
                 messages=[
                     {
                         "role": "system",
@@ -286,7 +297,9 @@ class AgentEngine:
         messages: list[dict],
         ctx: AgentContext,
     ) -> AsyncGenerator[dict, None]:
-        provider = await self._get_provider(ctx.project_id)
+        provider = await self._get_provider(ctx.project_id, provider_id=ctx.provider_id)
+        # Use the model explicitly requested by the client, or fall back to provider's default
+        resolved_model = provider.litellm_model_for(ctx.model)
 
         system_prompt = build_system_prompt(ctx.project_name, ctx.parent_directory)
         if ctx.context_summary:
@@ -303,20 +316,51 @@ class AgentEngine:
 
         oai_messages: list[dict] = [{"role": "system", "content": system_prompt}]
         for msg in messages:
-            oai_messages.append({"role": msg["role"], "content": msg["content"]})
+            role = msg.get("role")
+            content = msg.get("content")
+            tool_calls_list = msg.get("tool_calls", [])
 
-        oai_messages = await self._compact_context(oai_messages, provider, ctx)
+            if role == "user":
+                oai_messages.append({"role": "user", "content": content})
+            elif role == "assistant":
+                if tool_calls_list:
+                    assistant_tc = []
+                    for tc in tool_calls_list:
+                        assistant_tc.append({
+                            "id": tc.get("id"),
+                            "type": "function",
+                            "function": {
+                                "name": tc.get("tool"),
+                                "arguments": json.dumps(tc.get("args")) if isinstance(tc.get("args"), dict) else tc.get("args"),
+                            }
+                        })
+                    oai_messages.append({
+                        "role": "assistant",
+                        "content": content or None,
+                        "tool_calls": assistant_tc
+                    })
+                    for tc in tool_calls_list:
+                        if tc.get("result") is not None:
+                            oai_messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.get("id"),
+                                "content": tc.get("result")
+                            })
+                else:
+                    oai_messages.append({"role": "assistant", "content": content or None})
+
+        oai_messages = await self._compact_context(oai_messages, provider, ctx, resolved_model)
 
         tools = await self._build_tools()
 
         yield {
             "type": "provider",
-            "data": {"model": provider.default_model, "provider": provider.name},
+            "data": {"model": ctx.model or provider.default_model, "provider": provider.name},
         }
 
         for turn in range(MAX_TOOL_TURNS):
             response = await acompletion(
-                model=provider.litellm_model,
+                model=resolved_model,
                 messages=oai_messages,
                 api_key=provider.api_key,
                 api_base=provider.base_url or None,
@@ -358,6 +402,24 @@ class AgentEngine:
                     await save_message(ctx.session_id, "assistant", full_text)
                 break
 
+            # Save the assistant message to PocketBase
+            try:
+                msg_record = await save_message(ctx.session_id, "assistant", full_text)
+                message_id = msg_record["id"]
+            except Exception:
+                message_id = None
+
+            # Create PocketBase tool_call records and update our local IDs
+            for idx in sorted(tool_calls):
+                tc_data = tool_calls[idx]
+                if message_id:
+                    try:
+                        args = json.loads(tc_data["arguments"])
+                        pb_tc = await create_tool_call(message_id, tc_data["name"], args)
+                        tc_data["id"] = pb_tc["id"]
+                    except Exception:
+                        pass
+
             assistant_tc = []
             for idx in sorted(tool_calls):
                 tc_data = tool_calls[idx]
@@ -392,11 +454,73 @@ class AgentEngine:
                     "data": {"tool": tc_data["name"], "result": result},
                 }
 
+                # Update the tool call record in PocketBase with execution result
+                if message_id and tc_data["id"]:
+                    try:
+                        status = "error" if result.startswith("Error") else "completed"
+                        await update_tool_call(tc_data["id"], result, status)
+                    except Exception:
+                        pass
+
                 oai_messages.append({
                     "role": "tool",
                     "tool_call_id": tc_data["id"],
                     "content": result,
                 })
+
+        try:
+            await self._auto_generate_session_title(ctx.session_id, provider)
+        except Exception as e:
+            logger.warning("Error generando título automático: %s", e)
+
+    async def _auto_generate_session_title(self, session_id: str, provider: ProviderConfig):
+        session = await get_session(session_id)
+        if not session or session.get("title") != "Nuevo chat":
+            return
+
+        history = await get_messages(session_id, limit=5)
+        user_msg = ""
+        assistant_msg = ""
+        for m in history:
+            if m.get("role") == "user" and not user_msg:
+                user_msg = m.get("content", "")
+            elif m.get("role") == "assistant" and not assistant_msg:
+                assistant_msg = m.get("content", "")
+
+        if not user_msg:
+            return
+
+        prompt = (
+            "Genera un título corto y descriptivo (máximo 5 palabras, sin comillas, directo y en español) "
+            "para una conversación que empieza con la siguiente interacción:\n\n"
+            f"Usuario: {user_msg}\n"
+            f"Asistente: {assistant_msg}"
+        )
+
+        response = await acompletion(
+            model=resolved_model,
+            messages=[
+                {"role": "system", "content": "Eres un asistente que genera títulos cortos y descriptivos para chats."},
+                {"role": "user", "content": prompt}
+            ],
+            api_key=provider.api_key,
+            api_base=provider.base_url or None,
+            stream=False,
+            max_tokens=50,
+        )
+        message = response.choices[0].message
+        content = message.content
+        finish_reason = response.choices[0].finish_reason
+        if not content:
+            logger.info(
+                "Título vacío - finish_reason=%s, content=%s",
+                finish_reason, content,
+            )
+        if content:
+            title = content.strip().strip('"').strip("'").strip(".")
+            if title:
+                logger.info("Título generado: %s", title)
+                await update_session_title(session_id, title)
 
     async def _execute_tool(self, name: str, args: dict, ctx: AgentContext) -> str:
         try:

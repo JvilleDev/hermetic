@@ -38,10 +38,25 @@ async def get_messages(session_id: str, limit: int = 50) -> list[dict]:
             "filter": f'session_id="{session_id}"',
             "page": 1,
             "perPage": limit,
+            "expand": "tool_calls_via_message_id",
         },
     )
     r.raise_for_status()
-    return r.json()["items"]
+    items = r.json()["items"]
+    for item in items:
+        expanded = item.get("expand", {})
+        tc_list = expanded.get("tool_calls_via_message_id", [])
+        item["tool_calls"] = [
+            {
+                "id": tc.get("id"),
+                "tool": tc.get("tool_name"),
+                "args": tc.get("arguments", {}),
+                "result": tc.get("result"),
+                "isRunning": tc.get("status") == "running"
+            }
+            for tc in tc_list
+        ]
+    return items
 
 
 async def create_session(title: str = "Nuevo chat") -> dict:
@@ -68,6 +83,11 @@ async def save_message(session_id: str, role: str, content: str, attachments: li
         json={"session_id": session_id, "role": role, "content": content, "attachments": attachments or []},
     )
     r.raise_for_status()
+    # Touch the session so its "updated" timestamp refreshes (used for recency sorting)
+    try:
+        await c.patch(f"/api/collections/sessions/records/{session_id}", json={})
+    except Exception:
+        pass
     return r.json()
 
 
@@ -115,7 +135,7 @@ async def list_sessions(limit: int = 50) -> list[dict]:
     c = await _get_client()
     r = await c.get(
         "/api/collections/sessions/records",
-        params={"perPage": limit, "sort": "-created"},
+        params={"perPage": limit, "sort": "-updated"},
     )
     r.raise_for_status()
     return r.json()["items"]
@@ -132,6 +152,16 @@ async def update_session_summary(session_id: str, summary: str):
     r = await c.patch(
         f"/api/collections/sessions/records/{session_id}",
         json={"context_summary": summary},
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+async def update_session_title(session_id: str, title: str):
+    c = await _get_client()
+    r = await c.patch(
+        f"/api/collections/sessions/records/{session_id}",
+        json={"title": title},
     )
     r.raise_for_status()
     return r.json()
@@ -174,6 +204,13 @@ async def list_projects() -> list[dict]:
 async def create_project(data: dict) -> dict:
     c = await _get_client()
     r = await c.post("/api/collections/projects/records", json=data)
+    r.raise_for_status()
+    return r.json()
+
+
+async def update_project(project_id: str, data: dict) -> dict:
+    c = await _get_client()
+    r = await c.patch(f"/api/collections/projects/records/{project_id}", json=data)
     r.raise_for_status()
     return r.json()
 

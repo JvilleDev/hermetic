@@ -1,8 +1,6 @@
 package com.hermetic.app.ui.chat
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,16 +9,27 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.animation.core.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,14 +43,17 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hermetic.app.data.model.ChatMessage
 import com.hermetic.app.data.model.MessageRole
 import com.hermetic.app.data.model.ToolCallState
+import com.hermetic.app.data.model.ProviderWithModels
 import com.hermetic.app.ui.theme.ActiveGreen
 import com.hermetic.app.ui.theme.ActiveGreenBgLight
 import com.hermetic.app.ui.theme.ActiveGreenBgDark
+import com.hermetic.app.ui.components.MarkdownText
 
 @Composable
 fun ChatScreen(
@@ -49,18 +61,20 @@ fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val activeModel by viewModel.activeModel.collectAsState()
+    val providers by viewModel.providers.collectAsState()
     val listState = rememberLazyListState()
 
-    // Add mock initial message for demonstration if the screen starts empty
-    LaunchedEffect(Unit) {
-        if (uiState.messages.isEmpty() && sessionId == "new") {
-            viewModel.onInputChange("Explicame cómo funciona el sistema de autenticación en este proyecto.")
-        }
-    }
-
-    LaunchedEffect(uiState.messages.size) {
+    val lastMessage = uiState.messages.lastOrNull()
+    val lastContent = lastMessage?.content
+    val lastToolCallsSize = lastMessage?.toolCalls?.size ?: 0
+    LaunchedEffect(uiState.messages.size, lastContent, lastToolCallsSize) {
         if (uiState.messages.isNotEmpty()) {
-            listState.animateScrollToItem(uiState.messages.size - 1)
+            if (uiState.isStreaming) {
+                listState.scrollToItem(uiState.messages.size - 1)
+            } else {
+                listState.animateScrollToItem(uiState.messages.size - 1)
+            }
         }
     }
 
@@ -68,11 +82,36 @@ fun ChatScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .imePadding()
     ) {
-        // Thinking Panel when streaming or has active thinking text
-        if (uiState.isStreaming || uiState.thinkingText != null) {
-            ThinkingPanel(thinkingText = uiState.thinkingText ?: "Entendiendo la estructura del proyecto...\nBuscando archivos relacionados con auth...\nLeyendo el código de autenticación...")
+        // Active Context Banner
+        uiState.parentDirectory?.let { dir ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Folder,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Contexto: $dir",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
         }
+
+
 
         // Messages list
         LazyColumn(
@@ -83,14 +122,21 @@ fun ChatScreen(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (uiState.messages.isEmpty()) {
-                // If empty show a nice mock list identical to Mockup 1
+            if (uiState.isLoading) {
+                items(3) {
+                    MessageSkeleton()
+                }
+            } else if (uiState.messages.isEmpty()) {
                 item {
-                    MockConversation()
+                    WelcomeScreen(uiState.parentDirectory, onSuggestClick = viewModel::onInputChange)
                 }
             } else {
                 items(uiState.messages) { msg ->
-                    MessageBubble(msg)
+                    val isLast = uiState.messages.lastOrNull() == msg
+                    MessageBubble(
+                        msg = msg,
+                        isLastAndStreaming = isLast && uiState.isStreaming
+                    )
                 }
             }
         }
@@ -100,50 +146,49 @@ fun ChatScreen(
             isStreaming = uiState.isStreaming,
             onTextChange = viewModel::onInputChange,
             onSend = {
-                viewModel.sendMessage(
-                    projectId = null,
-                    projectName = null,
-                    parentDirectory = null,
-                )
+                viewModel.sendMessage()
             },
             onStop = viewModel::cancelStream,
+            activeModel = activeModel,
+            selectedProviderId = uiState.selectedProviderId,
+            selectedModel = uiState.selectedModel,
+            providers = providers,
+            onSelectProvider = viewModel::selectProvider,
         )
     }
 }
 
-// Logo Hexagon shape for the top bar
 @Composable
-fun HermeticHexagonLogo(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(30.dp),
-        contentAlignment = Alignment.Center
+private fun WelcomeScreen(
+    parentDirectory: String?,
+    onSuggestClick: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 80.dp, horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            val height = size.height
-            val path = Path().apply {
-                moveTo(width / 2, 0f)
-                lineTo(width, height / 4)
-                lineTo(width, 3 * height / 4)
-                lineTo(width / 2, height)
-                lineTo(0f, 3 * height / 4)
-                lineTo(0f, height / 4)
-                close()
-            }
-            drawPath(
-                path = path,
-                color = Color.Black,
-                style = Stroke(width = 4f)
-            )
-        }
+        HermeticHexagonLogo(modifier = Modifier.size(100.dp))
+        Spacer(modifier = Modifier.height(24.dp))
         Text(
-            text = "H",
+            text = "Hermetic",
             fontWeight = FontWeight.Bold,
-            fontSize = 14.sp,
-            color = Color.Black
+            fontSize = 28.sp,
+            color = MaterialTheme.colorScheme.onSurface
         )
     }
+}
+
+// Logo Hexagon shape for the top bar (replaced with transparent brand logo asset)
+@Composable
+fun HermeticHexagonLogo(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Image(
+        painter = androidx.compose.ui.res.painterResource(id = com.hermetic.app.R.drawable.ic_logo_no_bg),
+        contentDescription = "Hermetic Logo",
+        modifier = modifier
+    )
 }
 
 @Composable
@@ -194,7 +239,7 @@ private fun ThinkingPanel(thinkingText: String) {
                     )
                 }
                 Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.ChevronRight,
+                    imageVector = if (expanded) Icons.Outlined.KeyboardArrowDown else Icons.Outlined.ChevronRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -230,59 +275,135 @@ private fun ThinkingPanel(thinkingText: String) {
 }
 
 @Composable
-fun ToolCallRow(toolName: String, args: String, isRunning: Boolean) {
+fun ToolCallRow(
+    toolName: String,
+    args: String,
+    isRunning: Boolean,
+    result: String? = null
+) {
+    var expanded by remember { mutableStateOf(false) }
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    Row(
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                if (isDark) Color(0xFF222326) else Color(0xFFF3F4F6),
-                RoundedCornerShape(8.dp)
-            )
-            .border(
-                0.5.dp,
-                MaterialTheme.colorScheme.outline,
-                RoundedCornerShape(8.dp)
-            )
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isDark) Color(0xFF16171A) else Color(0xFFF3F4F6))
+            .clickable { expanded = !expanded }
+            .padding(vertical = 6.dp, horizontal = 10.dp)
     ) {
-        Column {
-            Text(
-                text = if (isRunning) "tool_start" else "tool_result",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isRunning) Color(0xFFEA580C) else ActiveGreen
-            )
-            Text(
-                text = toolName,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = args,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = ">",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+
+                Text(
+                    text = "Ran $toolName",
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (isRunning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(10.dp),
+                        strokeWidth = 1.5.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Running...",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = "Success",
+                        tint = ActiveGreen,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = "Done",
+                        fontSize = 10.sp,
+                        color = ActiveGreen
+                    )
+                }
+            }
         }
 
-        if (isRunning) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(16.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = "Success",
-                tint = ActiveGreen,
-                modifier = Modifier.size(18.dp)
-            )
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+            ) {
+                if (args.isNotBlank() && args != "{}") {
+                    Text(
+                        text = "Arguments:",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = args,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (isDark) Color(0xFF1E1F22) else Color(0xFFE5E7EB),
+                                RoundedCornerShape(4.dp)
+                            )
+                            .padding(6.dp)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
+                if (!result.isNullOrBlank()) {
+                    Text(
+                        text = "Result:",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = result,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (isDark) Color(0xFF1E1F22) else Color(0xFFE5E7EB),
+                                RoundedCornerShape(4.dp)
+                            )
+                            .padding(6.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -323,7 +444,7 @@ private fun MockConversation() {
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
-                            imageVector = Icons.Default.Check,
+                            imageVector = Icons.Outlined.Check,
                             contentDescription = "Read",
                             tint = Color(0xFF10B981),
                             modifier = Modifier.size(12.dp)
@@ -367,38 +488,224 @@ private fun MockConversation() {
 }
 
 @Composable
-private fun MessageBubble(msg: ChatMessage) {
-    val isUser = msg.role == MessageRole.USER
+private fun TypingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition()
+    val alpha1 by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+    val alpha2 by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, delayMillis = 200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+    val alpha3 by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, delayMillis = 400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .widthIn(max = 280.dp)
-                .background(
-                    if (isUser) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
-                    if (isUser) RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp) else RoundedCornerShape(16.dp)
-                )
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline,
-                    if (isUser) RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp) else RoundedCornerShape(16.dp)
-                )
-                .padding(12.dp)
-        ) {
-            Column {
-                if (!msg.content.isNullOrEmpty()) {
-                    Text(
-                        text = msg.content,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
+        Box(modifier = Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = alpha1), CircleShape))
+        Box(modifier = Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = alpha2), CircleShape))
+        Box(modifier = Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = alpha3), CircleShape))
+    }
+}
+
+@Composable
+private fun MessageBubble(msg: ChatMessage, isLastAndStreaming: Boolean = false) {
+    val isUser = msg.role == MessageRole.USER
+    val isStreaming = isLastAndStreaming && !isUser
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    var displayedContent by remember(msg.timestamp) {
+        mutableStateOf(if (isStreaming) "" else (msg.content ?: ""))
+    }
+
+    if (isStreaming) {
+        LaunchedEffect(msg.content) {
+            val target = msg.content ?: ""
+            if (target.length < displayedContent.length) {
+                displayedContent = target
+            } else {
+                while (displayedContent.length < target.length) {
+                    val increment = if (target.length - displayedContent.length > 20) 4 else 2
+                    val nextLength = (displayedContent.length + increment).coerceAtMost(target.length)
+                    displayedContent = target.substring(0, nextLength)
+                    kotlinx.coroutines.delay(10)
+                }
+            }
+        }
+    } else {
+        displayedContent = msg.content ?: ""
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
+    ) {
+        if (!isUser && !msg.thinking.isNullOrBlank()) {
+            var thinkingExpanded by remember { mutableStateOf(true) }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 4.dp)
+                    .background(
+                        if (isDark) Color(0xFF1E1E1E) else Color(0xFFF2F2F7),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .border(
+                        1.dp,
+                        if (isDark) Color(0xFF2D2D30) else Color(0xFFE5E5EA),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { thinkingExpanded = !thinkingExpanded },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.Psychology,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Proceso de pensamiento",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        imageVector = if (thinkingExpanded) Icons.Outlined.KeyboardArrowDown else Icons.Outlined.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
+                
+                if (thinkingExpanded) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = msg.thinking,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+        }
 
-                msg.toolCalls?.forEach { tc ->
-                    Spacer(Modifier.height(8.dp))
-                    ToolCallRow(toolName = tc.tool, args = tc.args.toString(), isRunning = tc.isRunning)
+        if (displayedContent.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .then(
+                        if (isUser) Modifier.widthIn(max = 280.dp).align(Alignment.End)
+                        else Modifier.fillMaxWidth().align(Alignment.Start)
+                    )
+                    .padding(horizontal = 4.dp)
+            ) {
+                Column {
+                    MarkdownText(
+                        markdown = displayedContent,
+                        color = if (isUser) {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                    if (!isUser) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp, bottom = 2.dp),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            IconButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Hermetic Response", displayedContent)
+                                    clipboard.setPrimaryClip(clip)
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ContentCopy,
+                                    contentDescription = "Copiar respuesta",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                            if (msg.durationSeconds != null) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "${msg.durationSeconds}s",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                            }
+                            if (!msg.model.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = msg.model,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (isLastAndStreaming && !isUser && msg.toolCalls.isNullOrEmpty()) {
+            TypingIndicator()
+        }
+
+        msg.toolCalls?.forEach { tc ->
+            val tcVisibleState = remember(tc.tool) {
+                MutableTransitionState(false).apply {
+                    targetState = true
+                }
+            }
+            AnimatedVisibility(
+                visibleState = tcVisibleState,
+                enter = fadeIn(animationSpec = tween(300)) + expandVertically(animationSpec = tween(300)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column {
+                    Spacer(Modifier.height(6.dp))
+                    ToolCallRow(
+                        toolName = tc.tool,
+                        args = tc.args.toString(),
+                        isRunning = tc.isRunning,
+                        result = tc.result
+                    )
                 }
             }
         }
@@ -412,80 +719,424 @@ private fun InputArea(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    activeModel: String,
+    selectedProviderId: String? = null,
+    selectedModel: String? = null,
+    providers: List<ProviderWithModels>,
+    onSelectProvider: (String, String) -> Unit
 ) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .background(
+                color = if (isDark) Color(0xFF1E1E1E) else Color(0xFFF2F2F7),
+                shape = RoundedCornerShape(28.dp)
+            )
+            .border(
+                1.dp,
+                if (isDark) Color(0xFF2D2D30) else Color(0xFFE5E5EA),
+                RoundedCornerShape(28.dp)
+            )
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        // Attachment Button
-        IconButton(
-            onClick = { /* TODO */ },
-            modifier = Modifier
-                .size(44.dp)
-                .background(MaterialTheme.colorScheme.surface, CircleShape)
-                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-        ) {
-            Icon(
-                imageVector = Icons.Default.AttachFile,
-                contentDescription = "Adjuntar archivo",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+        // Model Selector — compact pill trigger
+        var menuExpanded by remember { mutableStateOf(false) }
+        Box {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(if (isDark) Color(0xFF25262B) else Color(0xFFF3F4F6))
+                    .clickable { menuExpanded = true }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Psychology,
+                    contentDescription = "Seleccionar modelo",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    text = selectedModel ?: activeModel,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 80.dp)
+                )
+                Icon(
+                    imageVector = Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+
+            ModelSelectorPopup(
+                menuExpanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+                providers = providers,
+                selectedProviderId = selectedProviderId,
+                selectedModel = selectedModel,
+                activeModel = activeModel,
+                onSelectProvider = onSelectProvider,
+                isDark = isDark
             )
         }
 
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(4.dp))
 
-        // Message input row
-        OutlinedTextField(
+        // Text Field inside capsule
+        androidx.compose.foundation.text.BasicTextField(
             value = text,
             onValueChange = onTextChange,
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("Escribe tu mensaje...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-            enabled = !isStreaming,
-            maxLines = 4,
-            shape = RoundedCornerShape(24.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                focusedBorderColor = MaterialTheme.colorScheme.outline,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface,
             ),
-            trailingIcon = {
-                if (isStreaming) {
-                    IconButton(
-                        onClick = onStop,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(Color.Red, CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Stop,
-                            contentDescription = "Detener",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+            decorationBox = { innerTextField ->
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    if (text.isEmpty()) {
+                        Text(
+                            text = "Pregunta a Hermetic...",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
-                } else {
-                    IconButton(
-                        onClick = onSend,
-                        enabled = text.isNotBlank(),
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(
-                                if (text.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                CircleShape
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowUpward,
-                            contentDescription = "Enviar",
-                            tint = if (text.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                    innerTextField()
                 }
             }
         )
+
+        // Send / Stop button inside the capsule (using Box to bypass IconButton's 48.dp touch target enforcement)
+        val isEnabled = isStreaming || text.isNotBlank()
+        Box(
+            modifier = Modifier
+                .padding(start = 6.dp, end = 4.dp)
+                .size(32.dp)
+                .background(
+                    color = when {
+                        isStreaming -> if (isDark) Color.White else Color.Black
+                        text.isNotBlank() -> if (isDark) Color.White else Color.Black
+                        else -> Color.Transparent
+                    },
+                    shape = CircleShape
+                )
+                .then(
+                    if (isEnabled) {
+                        Modifier.clickable {
+                            if (isStreaming) {
+                                onStop()
+                            } else {
+                                onSend()
+                            }
+                        }
+                    } else Modifier
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (isStreaming) Icons.Outlined.Stop else Icons.Outlined.ArrowUpward,
+                contentDescription = if (isStreaming) "Detener" else "Enviar",
+                tint = when {
+                    isStreaming || text.isNotBlank() -> if (isDark) Color.Black else Color.White
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                },
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModelSelectorPopup(
+    menuExpanded: Boolean,
+    onDismissRequest: () -> Unit,
+    providers: List<ProviderWithModels>,
+    selectedProviderId: String?,
+    selectedModel: String?,
+    activeModel: String,
+    onSelectProvider: (String, String) -> Unit,
+    isDark: Boolean
+) {
+    val density = LocalDensity.current
+    AnimatedVisibility(
+        visible = menuExpanded,
+        enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { -it / 3 },
+        exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 3 }
+    ) {
+        Popup(
+            onDismissRequest = onDismissRequest,
+            properties = PopupProperties(focusable = true),
+            alignment = Alignment.BottomStart,
+            offset = with(density) { IntOffset(4.dp.roundToPx(), (-12).dp.roundToPx()) }
+        ) {
+            Card(
+                modifier = Modifier
+                    .widthIn(min = 200.dp, max = 320.dp)
+                    .heightIn(max = 380.dp)
+                    .border(
+                        1.dp,
+                        if (isDark) Color(0xFF2D2E32) else Color(0xFFE5E7EB),
+                        RoundedCornerShape(24.dp)
+                    ),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDark) Color(0xFF18191B) else Color(0xFFFFFFFF)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
+                val scrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(scrollState)
+                        .requiredHeightIn(max = 380.dp)
+                ) {
+                    var stepProviderId by remember { mutableStateOf<String?>(null) }
+                    val hasProviders = providers.isNotEmpty() && providers.any { it.models.isNotEmpty() }
+
+                    if (!hasProviders) {
+                        Text(
+                            text = "No hay providers disponibles",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                        )
+                    } else if (stepProviderId == null) {
+                        // Step 1 — pick a provider
+                        providers.forEach { provider ->
+                            if (provider.models.isEmpty()) return@forEach
+
+                            val isActiveProvider = if (selectedProviderId != null)
+                                provider.id == selectedProviderId
+                            else if (selectedModel != null)
+                                provider.models.any { it == selectedModel }
+                            else
+                                false
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { stepProviderId = provider.id }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Psychology,
+                                    contentDescription = null,
+                                    tint = if (isActiveProvider) ActiveGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = provider.name,
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isActiveProvider) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${provider.models.size} modelo${if (provider.models.size != 1) "s" else ""}",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                }
+                                if (isActiveProvider) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Check,
+                                        contentDescription = null,
+                                        tint = ActiveGreen,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                }
+                                Spacer(Modifier.width(2.dp))
+                                Icon(
+                                    imageVector = Icons.Outlined.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        // Step 2 — pick a model from the selected provider
+                        val selectedProv = providers.find { it.id == stepProviderId }
+                        if (selectedProv != null) {
+                            // Back row
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { stepProviderId = null }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                                        contentDescription = "Volver",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = selectedProv.name,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
+                            )
+
+                            selectedProv.models.forEach { model ->
+                                val currentSelected = if (selectedModel != null)
+                                    model == selectedModel && stepProviderId == selectedProviderId
+                                else
+                                    false
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                                onDismissRequest()
+                                                stepProviderId = null
+                                            onSelectProvider(selectedProv.id, model)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(
+                                                if (currentSelected) ActiveGreen else Color.Transparent,
+                                                CircleShape
+                                            )
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        text = model,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (currentSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (currentSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (currentSelected) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Check,
+                                            contentDescription = null,
+                                            tint = ActiveGreen,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageSkeleton() {
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "shimmerAlpha"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // User message skeleton (right aligned)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(180.dp)
+                    .height(40.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
+                        shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)
+                    )
+            )
+        }
+
+        // Assistant message skeleton (left aligned)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(260.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = alpha),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = alpha),
+                        RoundedCornerShape(16.dp)
+                    )
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(16.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha * 0.2f),
+                            shape = RoundedCornerShape(4.dp)
+                        )
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.8f)
+                        .height(16.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha * 0.2f),
+                            shape = RoundedCornerShape(4.dp)
+                        )
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.5f)
+                        .height(16.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha * 0.2f),
+                            shape = RoundedCornerShape(4.dp)
+                        )
+                )
+            }
+        }
     }
 }

@@ -7,6 +7,8 @@ class ChatRequest(BaseModel):
     project_id: str | None = None
     project_name: str | None = None
     parent_directory: str | None = None
+    provider_id: str | None = None
+    model: str | None = None
 
 
 class TokenEvent(BaseModel):
