@@ -8,7 +8,7 @@ from app.updater import check_and_apply_update
 app = FastAPI(
     title="Hermetic AI",
     description="Motor de IA soberano personal",
-    version="0.1.0",
+    version="0.1.1",
 )
 
 app.include_router(router)

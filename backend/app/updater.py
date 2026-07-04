@@ -11,7 +11,7 @@ logger = logging.getLogger("updater")
 logging.basicConfig(level=logging.INFO)
 
 GITHUB_REPO = "JvilleDev/hermetic"
-CURRENT_VERSION = "0.1.0"
+CURRENT_VERSION = "0.1.1"
 
 def get_latest_release():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
