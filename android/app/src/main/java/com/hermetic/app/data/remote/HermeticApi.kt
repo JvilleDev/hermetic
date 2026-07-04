@@ -54,6 +54,17 @@ class HermeticApi @Inject constructor(
         return this
     }
 
+    private fun parseError(body: String?): String {
+        if (body == null) return "Error de conexión"
+        return try {
+            val map = gson.fromJson(body, Map::class.java)
+            @Suppress("UNCHECKED_CAST")
+            (map as? Map<String, Any>)?.get("detail")?.toString() ?: body
+        } catch (_: Exception) {
+            body
+        }
+    }
+
     suspend fun login(email: String, password: String): Map<String, Any> {
         val jsonBody = gson.toJson(mapOf("email" to email, "password" to password))
             .toRequestBody("application/json".toMediaType())
@@ -67,7 +78,7 @@ class HermeticApi @Inject constructor(
             @Suppress("UNCHECKED_CAST")
             return gson.fromJson(body, Map::class.java) as Map<String, Any>
         }
-        throw Exception(body ?: "Error HTTP ${response.code}")
+        throw Exception(parseError(body))
     }
 
     suspend fun register(email: String, password: String, name: String = ""): Map<String, Any> {
@@ -83,7 +94,7 @@ class HermeticApi @Inject constructor(
             @Suppress("UNCHECKED_CAST")
             return gson.fromJson(body, Map::class.java) as Map<String, Any>
         }
-        throw Exception(body ?: "Error HTTP ${response.code}")
+        throw Exception(parseError(body))
     }
 
     suspend fun verifyAuth(): Boolean {

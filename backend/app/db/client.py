@@ -1,6 +1,10 @@
+import logging
+
 from httpx import AsyncClient
 from fastapi import HTTPException
 from app.config import settings
+
+logger = logging.getLogger("db")
 
 _client: AsyncClient | None = None
 
@@ -30,7 +34,10 @@ async def pb_login(email: str, password: str) -> dict:
             json={"identity": email, "password": password},
         )
         if r.status_code != 200:
-            raise HTTPException(status_code=401, detail="Credenciales inválidas")
+            logger.warning("Login failed for %s: HTTP %d - %s", email, r.status_code, r.text[:200])
+            body = r.json()
+            msg = body.get("message", "Credenciales inválidas")
+            raise HTTPException(status_code=401, detail=msg)
         return r.json()
 
 
@@ -46,8 +53,10 @@ async def pb_register(email: str, password: str, password_confirm: str, name: st
             },
         )
         if r.status_code not in (200, 201):
-            detail = r.json().get("message", "Error al registrar")
-            raise HTTPException(status_code=r.status_code, detail=detail)
+            logger.warning("Register failed for %s: HTTP %d - %s", email, r.status_code, r.text[:300])
+            body = r.json()
+            msg = body.get("message", "Error al registrar")
+            raise HTTPException(status_code=r.status_code, detail=msg)
         user = r.json()
     # Auto-login after register
     return await pb_login(email, password)

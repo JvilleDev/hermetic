@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -50,6 +51,7 @@ skill_registry = SkillRegistry()
 engine = AgentEngine(mcp_manager=mcp_manager, skill_registry=skill_registry)
 
 router = APIRouter()
+logger = logging.getLogger("api")
 
 
 @router.on_event("startup")
@@ -78,7 +80,10 @@ async def shutdown():
 
 @router.post("/api/auth/login")
 async def auth_login(data: dict):
-    result = await pb_login(data["email"], data["password"])
+    email = data.get("email", "")
+    logger.info("Login attempt: %s", email)
+    result = await pb_login(email, data.get("password", ""))
+    logger.info("Login successful: %s", email)
     return {
         "token": result["token"],
         "user": result["record"],
@@ -87,12 +92,15 @@ async def auth_login(data: dict):
 
 @router.post("/api/auth/register")
 async def auth_register(data: dict):
+    email = data.get("email", "")
+    logger.info("Register attempt: %s", email)
     result = await pb_register(
-        email=data["email"],
-        password=data["password"],
-        password_confirm=data.get("password_confirm", data["password"]),
+        email=email,
+        password=data.get("password", ""),
+        password_confirm=data.get("password_confirm", data.get("password", "")),
         name=data.get("name", ""),
     )
+    logger.info("Register successful: %s", email)
     return {
         "token": result["token"],
         "user": result["record"],

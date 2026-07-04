@@ -1,9 +1,14 @@
+import logging
 import threading
+
 from fastapi import FastAPI
+
 from app.api.routes import router
 from app.config import settings
 from app.middleware.auth import auth_middleware
 from app.updater import start_periodic_updates
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 app = FastAPI(
     title="Hermetic AI",
