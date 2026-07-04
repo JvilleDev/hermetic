@@ -42,6 +42,7 @@ from app.db.client import (
     verify_pb_token,
     register_fcm_token,
 )
+from app.services.notifier import send_release_notification
 from app.mcp.manager import MCPManager
 from app.skills.registry import SkillRegistry
 
@@ -116,6 +117,21 @@ async def register_fcm_endpoint(data: dict, authorization: str = Header(...)):
         platform=data.get("platform", "android"),
     )
     return {"status": "ok"}
+
+
+# --- Release Webhook ---
+
+@router.post("/api/push/notify-release")
+async def notify_release(data: dict):
+    secret = data.get("secret", "")
+    if not settings.release_webhook_secret or secret != settings.release_webhook_secret:
+        raise HTTPException(status_code=403, detail="Invalid secret")
+
+    version = data.get("version", "unknown")
+    release_url = data.get("release_url", "")
+
+    await send_release_notification(version, release_url)
+    return {"status": "ok", "notified": True}
 
 
 # --- Health ---

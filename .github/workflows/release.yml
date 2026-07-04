@@ -1,0 +1,19 @@
+name: Notify Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify users via FCM
+        run: |
+          curl -s -X POST "${{ secrets.BACKEND_URL }}/api/push/notify-release" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "secret": "${{ secrets.RELEASE_WEBHOOK_SECRET }}",
+              "version": "${{ github.event.release.tag_name }}",
+              "release_url": "${{ github.event.release.html_url }}"
+            }'
