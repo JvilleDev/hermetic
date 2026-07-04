@@ -12,7 +12,28 @@ permissions:
   contents: write
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Filter paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            android:
+              - 'android/**'
+            backend:
+              - 'backend/**'
+
   build-android:
+    needs: changes
+    if: ${{ needs.changes.outputs.android == 'true' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -38,19 +59,22 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
   create-release:
-    needs: build-android
+    needs: [changes, build-android]
+    if: always() && (needs.changes.result == 'success') && (needs.build-android.result == 'success' || needs.build-android.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Download APK artifact
+        if: ${{ needs.changes.outputs.android == 'true' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
         uses: actions/download-artifact@v4
         with:
           name: app-debug
           path: ./artifacts
 
       - name: Package Backend
+        if: ${{ needs.changes.outputs.backend == 'true' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
         run: |
           mkdir -p ./artifacts
           tar -czf ./artifacts/hermetic-backend.tar.gz -C backend .
@@ -63,6 +87,7 @@ jobs:
           files: |
             ./artifacts/app-debug.apk
             ./artifacts/hermetic-backend.tar.gz
+          fail_on_unmatched_files: false
           draft: false
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
           generate_release_notes: true

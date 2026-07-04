@@ -24,9 +24,15 @@ def get_latest_release():
             if response.status == 200:
                 data = json.loads(response.read().decode())
                 return data
+    except urllib.error.HTTPError as he:
+        if he.code == 404:
+            logger.info("No releases found on GitHub yet (HTTP 404).")
+        else:
+            logger.error(f"HTTP Error fetching latest release: {he.code}")
     except Exception as e:
         logger.error(f"Error fetching latest release: {e}")
     return None
+
 
 def is_newer_version(current: str, latest: str) -> bool:
     try:
