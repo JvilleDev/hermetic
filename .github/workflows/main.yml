@@ -12,6 +12,13 @@ permissions:
   contents: write
 
 jobs:
+  validate-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check GOOGLE_SERVICES_JSON_B64
+        run: |
+          echo '${{ secrets.GOOGLE_SERVICES_JSON_B64 }}' | base64 -d > /dev/null 2>&1 || { echo "ERROR: GOOGLE_SERVICES_JSON_B64 secret is missing or invalid"; exit 1; }
+
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -32,7 +39,7 @@ jobs:
               - 'backend/**'
 
   build-android:
-    needs: changes
+    needs: [changes, validate-secrets]
     if: ${{ needs.changes.outputs.android == 'true' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
@@ -40,9 +47,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Inject google-services.json
-        run: |
-          echo '${{ secrets.GOOGLE_SERVICES_JSON_B64 }}' | base64 -d > android/app/google-services.json
-          python3 -c "import json; json.load(open('android/app/google-services.json'))" || { echo "ERROR: GOOGLE_SERVICES_JSON_B64 secret is missing or invalid JSON"; exit 1; }
+        run: echo '${{ secrets.GOOGLE_SERVICES_JSON_B64 }}' | base64 -d > android/app/google-services.json
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
