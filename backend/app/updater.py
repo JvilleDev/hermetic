@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger("updater")
 logging.basicConfig(level=logging.INFO)
 
-GITHUB_REPO = "johann-dev/Hermetic"
+GITHUB_REPO = "JvilleDev/hermetic"
 CURRENT_VERSION = "0.1.0"
 
 def get_latest_release():

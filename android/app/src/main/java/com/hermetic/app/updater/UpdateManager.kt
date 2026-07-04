@@ -27,7 +27,7 @@ data class GitHubAsset(
 class UpdateManager(private val context: Context) {
     private val client = OkHttpClient()
     private val gson = Gson()
-    private val repoUrl = "https://api.github.com/repos/johann-dev/Hermetic/releases/latest"
+    private val repoUrl = "https://api.github.com/repos/JvilleDev/hermetic/releases/latest"
 
     suspend fun checkForUpdates(currentVersion: String): String? {
         return withContext(Dispatchers.IO) {
