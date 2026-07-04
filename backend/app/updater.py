@@ -12,7 +12,7 @@ logger = logging.getLogger("updater")
 logging.basicConfig(level=logging.INFO)
 
 GITHUB_REPO = "JvilleDev/hermetic"
-CURRENT_VERSION = "0.1.3"
+CURRENT_VERSION = "0.1.5"
 UPDATE_INTERVAL_SECONDS = 6 * 60 * 60
 
 
